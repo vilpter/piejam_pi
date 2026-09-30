@@ -10,6 +10,9 @@ sudo ./provisioning/provision.sh 50-app     # one stage
 
 Every stage is idempotent, so it's safe to re-run after pulling changes.
 Files the scripts modify in `/boot/firmware` are backed up once as `*.piejam-orig`.
+`cmdline.txt` is only edited if it contains a `root=` parameter, and it's replaced
+through a temporary file, so a failed or interrupted run can't leave it unbootable.
+Any failed edit stops provisioning with an error.
 
 ## Prerequisites
 

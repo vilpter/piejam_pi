@@ -25,10 +25,13 @@ install_file() {
     log "installed $dest"
 }
 
+# The helpers below exit via die() on any failure instead of relying on
+# set -e, which bash disables inside functions called from if/||/&&.
+
 # backup_once FILE
 # Keep the distribution's original copy the first time we modify FILE.
 backup_once() {
-    [[ -e $1.piejam-orig ]] || cp -a "$1" "$1.piejam-orig"
+    [[ -e $1.piejam-orig ]] || cp -a "$1" "$1.piejam-orig" || die "cannot back up $1"
 }
 
 # unit_exists UNIT
@@ -42,12 +45,15 @@ unit_exists() {
 ensure_overlay_param() {
     local file=$1 overlay=$2 param=$3
     local line_re="^dtoverlay=${overlay}([,[:space:]#]|\$)"
+    local has_param_re="^dtoverlay=${overlay}(,[^[:space:]#]*)?,${param}([,[:space:]#]|\$)"
 
+    [[ -r $file ]] || die "cannot read $file"
     grep -qE "$line_re" "$file" || return 1
-    grep -E "$line_re" "$file" | grep -qE "[=,]${param}([,[:space:]#]|\$)" && return 0
+    grep -qE "$has_param_re" "$file" && return 0
 
     backup_once "$file"
-    sed -i -E "s/^(dtoverlay=${overlay}(,[^[:space:]#]*)?)([[:space:]#]|\$)/\\1,${param}\\3/" "$file"
+    sed -i -E "s/^(dtoverlay=${overlay}(,[^[:space:]#]*)?)([[:space:]#]|\$)/\\1,${param}\\3/" "$file" ||
+        die "failed to edit $file"
     log "$(basename "$file"): $overlay now has $param"
 }
 
@@ -56,10 +62,16 @@ ensure_overlay_param() {
 # value for the same key is replaced rather than duplicated.
 ensure_cmdline_param() {
     local param=$1 file=$BOOT_DIR/cmdline.txt
-    local key=${param%%=*} tok found=0
+    local key=${param%%=*} tok found=0 tmp
     local -a tokens out=()
 
-    read -r -a tokens < "$file"
+    # A command line without root= won't boot. Never build on one: that would
+    # mean the file was empty or unreadable, not that it needs our parameters.
+    [[ -r $file ]] || die "cannot read $file"
+    read -r -a tokens < "$file" || [[ ${#tokens[@]} -gt 0 ]] ||
+        die "$file is empty; refusing to edit it"
+    [[ " ${tokens[*]} " == *" root="* ]] ||
+        die "$file has no root= parameter; refusing to edit it"
     for tok in "${tokens[@]}"; do
         if [[ $tok == "$param" ]]; then
             found=1
@@ -75,7 +87,16 @@ ensure_cmdline_param() {
 
     if [[ "${out[*]}" != "${tokens[*]}" ]]; then
         backup_once "$file"
-        printf '%s\n' "${out[*]}" > "$file"
+        # Write a temporary file and rename it over the original, so an
+        # interruption can't leave cmdline.txt truncated.
+        tmp=$(mktemp "$file.XXXXXX") || die "cannot create a temporary file next to $file"
+        # Keep the original mode. On the FAT boot partition modes come from the
+        # mount options and chmod may be refused, which is harmless there.
+        chmod --reference="$file" "$tmp" 2>/dev/null || true
+        if ! printf '%s\n' "${out[*]}" > "$tmp" || ! mv -f "$tmp" "$file"; then
+            rm -f "$tmp"
+            die "failed to write $file"
+        fi
         log "cmdline.txt: set $param"
     fi
 }
