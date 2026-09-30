@@ -1,0 +1,42 @@
+[Unit]
+Description=PieJam audio mixer
+Documentation=https://github.com/vilpter/piejam_pi
+# Deliberately no dependency on the network (ADR 0005) or on the audio
+# interface: the UI comes up first and PieJam picks up the Scarlett later.
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=piejam
+Group=piejam
+SupplementaryGroups=audio video render input
+WorkingDirectory=~
+
+RuntimeDirectory=piejam
+RuntimeDirectoryMode=0700
+Environment=XDG_RUNTIME_DIR=/run/piejam
+
+# Render straight to DRM/KMS (ADR 0002). piejam-launch writes the KMS config.
+Environment=QT_QPA_PLATFORM=eglfs
+Environment=QT_QPA_EGLFS_INTEGRATION=eglfs_kms
+Environment=QT_QPA_EGLFS_HIDECURSOR=1
+# Logs scene-graph setup, used as the interim "UI visible" marker by
+# benchmarks/measure-boot.sh.
+Environment=QSG_INFO=1
+
+ExecStart=/usr/local/lib/piejam/piejam-launch
+
+# Quitting from the UI powers off (handled in piejam-launch). A crash restarts
+# the app; after repeated failures it stays down so you can log in over SSH.
+Restart=on-failure
+RestartSec=2
+# 143 = stopped by SIGTERM, i.e. "systemctl stop piejam". Not a failure.
+SuccessExitStatus=143
+
+# Real-time audio threads and memory locking (upstream's "add memory locking").
+LimitRTPRIO=95
+LimitMEMLOCK=infinity
+
+[Install]
+WantedBy=multi-user.target

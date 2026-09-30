@@ -1,0 +1,89 @@
+#!/bin/bash
+# Pick the display, write Qt's KMS config, and run PieJam.
+#
+# Ported from PieJam OS (board/raspberrypi5/rootfs/usr/bin/piejam), with fixes:
+#  - waits for the display to probe, because systemd starts us earlier than
+#    PieJam OS's inittab entry did
+#  - reads HDMI status exactly; the original's grep for "connected" also
+#    matched "disconnected"
+#  - converts sysfs connector names (DSI-1, HDMI-A-1) to the names Qt's KMS
+#    config expects (DSI1, HDMI1)
+#  - runs under bash, since the original used [[ ]] under #!/bin/sh
+#  - powers off through systemd, and only when the app itself quits
+set -u
+shopt -s nullglob
+
+# PIEJAM_APP and PIEJAM_SYSFS exist for tests/test-launcher.sh.
+readonly APP=${PIEJAM_APP:-/usr/local/bin/piejam_app}
+readonly SYSFS=${PIEJAM_SYSFS:-/sys}
+readonly KMS_CONFIG=${RUNTIME_DIRECTORY:-/run/piejam}/eglfs-kms.json
+readonly DISPLAY_TIMEOUT_TENTHS=${PIEJAM_DISPLAY_TIMEOUT_TENTHS:-100}
+
+log() { echo "piejam-launch: $*" >&2; }
+
+# A DSI connector always reads "connected", so only trust it when the panel's
+# touch controller is present too (FT5406 on the 7" display).
+touch_panel_present() {
+    local names=("$SYSFS"/class/input/event*/device/name)
+    (( ${#names[@]} )) && grep -qsE 'ft5x06|Goodix' "${names[@]}"
+}
+
+# Print the DRM connector to use (e.g. card1-DSI-1), preferring the DSI panel.
+find_output() {
+    local path status
+    if touch_panel_present; then
+        for path in "$SYSFS"/class/drm/card*-DSI-*; do
+            echo "${path##*/}"
+            return 0
+        done
+    fi
+    for path in "$SYSFS"/class/drm/card*-HDMI-A-*; do
+        read -r status < "$path/status" 2>/dev/null || continue
+        if [[ $status == connected ]]; then
+            echo "${path##*/}"
+            return 0
+        fi
+    done
+    return 1
+}
+
+output=
+for (( i = 0; i < DISPLAY_TIMEOUT_TENTHS; i++ )); do
+    output=$(find_output) && break
+    sleep 0.1
+done
+if [[ -z $output ]]; then
+    log "no display found after $(( DISPLAY_TIMEOUT_TENTHS / 10 )) s"
+    exit 1
+fi
+
+card=${output%%-*}                   # card1
+connector=${output#*-}               # DSI-1 or HDMI-A-1
+qt_name=${connector/-A-/-}
+qt_name=${qt_name//-/}               # DSI1 or HDMI1
+
+cat > "$KMS_CONFIG" <<EOF
+{
+    "device": "/dev/dri/$card",
+    "hwcursor": false,
+    "outputs": [
+        { "name": "$qt_name", "primary": true }
+    ]
+}
+EOF
+export QT_QPA_EGLFS_KMS_CONFIG=$KMS_CONFIG
+log "using $connector on /dev/dri/$card"
+
+# systemd stops the service with SIGTERM; never power off in that case.
+# (bash runs the trap once the app has exited.)
+trap 'exit 143' TERM INT
+
+"$APP" "$@"
+status=$?
+
+# The app's Shutdown button quits with status 0. PieJam OS halted here.
+if (( status == 0 )); then
+    log "PieJam quit; powering off"
+    exec systemctl poweroff
+fi
+exit "$status"
