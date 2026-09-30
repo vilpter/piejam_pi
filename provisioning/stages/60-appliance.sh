@@ -1,6 +1,7 @@
 #!/bin/bash
 # Stage 60: boot straight into PieJam.
 set -euo pipefail
+# shellcheck source=../lib.sh
 source "$(dirname "$0")/../lib.sh"
 require_root
 

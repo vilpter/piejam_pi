@@ -79,6 +79,7 @@ docs/                  Architecture, decision log, benchmark plan, ADRs
 ```sh
 tests/test-provisioning-lib.sh
 tests/test-launcher.sh
+tests/lint.sh                    # shellcheck on every shell script (needs shellcheck)
 ```
 
 ## Related repositories

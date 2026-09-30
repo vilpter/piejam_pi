@@ -4,6 +4,7 @@
 # The app keeps its settings, sessions and recordings under $HOME
 # (~/.config/, ~/sessions/, ~/recordings/).
 set -euo pipefail
+# shellcheck source=../lib.sh
 source "$(dirname "$0")/../lib.sh"
 require_root
 

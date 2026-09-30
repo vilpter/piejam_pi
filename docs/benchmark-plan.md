@@ -116,6 +116,7 @@ it helps and doesn't cost reliability or maintainability.
 These run on any Linux machine, no Pi needed:
 
 ```sh
-tests/test-provisioning-lib.sh   # cmdline.txt / config.txt editing helpers
-tests/test-launcher.sh           # display selection, KMS config, power-off rules
+tests/test-provisioning-lib.sh   # cmdline.txt / config.txt editing helpers, incl. failure handling
+tests/test-launcher.sh           # display selection and wait, KMS config, power-off rules
+tests/lint.sh                    # shellcheck on every shell script
 ```

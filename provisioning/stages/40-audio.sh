@@ -5,6 +5,7 @@
 # alsa-lib), so there's no asound.conf to write. The udev rule gives the card
 # a stable name and marks the "audio ready" milestone.
 set -euo pipefail
+# shellcheck source=../lib.sh
 source "$(dirname "$0")/../lib.sh"
 require_root
 

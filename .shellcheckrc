@@ -1,0 +1,4 @@
+# Follow sourced files (e.g. provisioning/lib.sh), resolving paths from the
+# directory of the script being checked.
+external-sources=true
+source-path=SCRIPTDIR

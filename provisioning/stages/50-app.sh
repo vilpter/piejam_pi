@@ -8,6 +8,7 @@
 #   PIEJAM_CMAKE_ARGS  extra CMake arguments, e.g. "-DCMAKE_CXX_FLAGS=-Wno-error"
 #   PIEJAM_FORCE_BUILD set to 1 to rebuild even if this commit is installed
 set -euo pipefail
+# shellcheck source=../lib.sh
 source "$(dirname "$0")/../lib.sh"
 require_root
 

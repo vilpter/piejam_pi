@@ -1,6 +1,7 @@
 #!/bin/bash
 # Stage 10: install what PieJam needs to build and run.
 set -euo pipefail
+# shellcheck source=../lib.sh
 source "$(dirname "$0")/../lib.sh"
 require_root
 

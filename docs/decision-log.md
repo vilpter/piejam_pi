@@ -70,7 +70,7 @@ Resolved:
 | F3 | ~~Review the Buildroot cross-compile fixes~~ Not applicable to the current fork history | — |
 | F4 | Rework the network backend onto `nmcli`/systemd with `QProcess` argument lists; start NFS on demand, never enable it at boot. Add NFS packages and narrow privilege rules at the same time | `vilpter/piejam` + this repo, [ADR 0004](adr/0004-network-backend-nmcli.md) |
 | F5 | Emit `sd_notify READY=1` after the first frame; switch the unit to `Type=notify` | `vilpter/piejam` + this repo, [benchmark plan](benchmark-plan.md#making-m2-exact) |
-| F6 | Lint the scripts with shellcheck (it wasn't available when they were written); consider CI running shellcheck and `tests/` | This repo |
+| F6 | ~~Lint the scripts with shellcheck~~ Done: `tests/lint.sh` is clean. Still open: CI running `tests/lint.sh` and the test scripts on every push | This repo |
 
 ## Findings: the existing fork
 

@@ -17,6 +17,7 @@ require_root
 # for testing on other hardware.
 check_platform() {
     local codename model
+    # shellcheck source=/dev/null
     codename=$(. /etc/os-release && echo "${VERSION_CODENAME:-unknown}")
     [[ $codename == trixie ]] ||
         warn "expected Raspberry Pi OS based on Debian 13 (trixie), found '$codename'"

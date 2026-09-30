@@ -4,6 +4,7 @@
 # Our config.txt settings live in their own file, pulled in with a single
 # "include" line, so the distribution's config.txt stays recognizable.
 set -euo pipefail
+# shellcheck source=../lib.sh
 source "$(dirname "$0")/../lib.sh"
 require_root
 
