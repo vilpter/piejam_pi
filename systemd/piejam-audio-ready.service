@@ -1,0 +1,14 @@
+[Unit]
+Description=PieJam boot milestone: audio interface ready
+Documentation=https://github.com/vilpter/piejam_pi/blob/master/docs/benchmark-plan.md
+# Started by udev (70-piejam-audio.rules) when the Scarlett's sound card
+# appears. Its activation time is the "audio ready" milestone. Default
+# dependencies are off so the timestamp isn't held back to basic.target.
+DefaultDependencies=no
+Conflicts=shutdown.target
+Before=shutdown.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/true

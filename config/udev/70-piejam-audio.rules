@@ -1,0 +1,7 @@
+# Focusrite Scarlett 2i2 (any generation):
+# - give its ALSA card the stable id "Scarlett" regardless of USB enumeration order
+# - start piejam-audio-ready.service, which marks the "audio ready" boot milestone
+SUBSYSTEM=="sound", KERNEL=="card*", ACTION=="add", \
+  ATTRS{idVendor}=="1235", ATTRS{product}=="Scarlett 2i2*", \
+  ATTR{id}="Scarlett", \
+  TAG+="systemd", ENV{SYSTEMD_WANTS}+="piejam-audio-ready.service"
