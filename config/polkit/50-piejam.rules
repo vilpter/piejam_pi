@@ -1,0 +1,22 @@
+// Allow the PieJam appliance user to act without an interactive session:
+// - power off and reboot (the app's Shutdown button; see piejam-launch)
+// - manage NetworkManager (for the fork's network settings, ADR 0004)
+polkit.addRule(function(action, subject) {
+    if (subject.user !== "piejam") {
+        return polkit.Result.NOT_HANDLED;
+    }
+
+    switch (action.id) {
+    case "org.freedesktop.login1.power-off":
+    case "org.freedesktop.login1.power-off-multiple-sessions":
+    case "org.freedesktop.login1.reboot":
+    case "org.freedesktop.login1.reboot-multiple-sessions":
+        return polkit.Result.YES;
+    }
+
+    if (action.id.indexOf("org.freedesktop.NetworkManager.") === 0) {
+        return polkit.Result.YES;
+    }
+
+    return polkit.Result.NOT_HANDLED;
+});

@@ -1,0 +1,9 @@
+# piejam_pi firmware settings, included from config.txt.
+# Installed by provisioning/stages/20-boot-config.sh; edit the copy in the repo.
+
+# No rainbow splash at power-on.
+disable_splash=1
+
+# NVMe HAT: enable the external PCIe connector. HAT+ boards are detected
+# automatically; older NVMe HATs need this line.
+dtparam=pciex1
