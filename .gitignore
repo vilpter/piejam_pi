@@ -1,0 +1,7 @@
+# Boot measurement output
+benchmarks/results/
+
+# Editor and OS clutter
+*.swp
+*~
+.DS_Store
