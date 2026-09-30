@@ -104,16 +104,26 @@ status=$?
 setup
 add_connector card1-DSI-1
 add_input event0 "generic ft5x06 (79)"
-# The app exits cleanly on SIGTERM, which is exactly the risky case.
-stub_app 'trap "exit 0" TERM; while :; do sleep 0.05; done'
-run_launcher &
+# The app exits cleanly on SIGTERM, which is exactly the risky case. Its loop
+# is bounded so a broken launcher can't leave it running forever.
+stub_app 'trap "exit 0" TERM; for _ in $(seq 100); do sleep 0.05; done; exit 9'
+# Start the launcher itself in the background (not via run_launcher, whose
+# subshell would make $! the wrong process).
+PATH="$work/bin:$PATH" PIEJAM_APP="$work/app" PIEJAM_SYSFS="$work/sys" \
+    RUNTIME_DIRECTORY="$work/run" PIEJAM_DISPLAY_TIMEOUT_TENTHS=3 \
+    "$launcher" 2>"$work/stderr" &
 pid=$!
-sleep 0.5
-# systemd signals every process in the service's cgroup.
+for _ in $(seq 50); do [[ -e $work/app.ran ]] && break; sleep 0.05; done
+# systemd signals every process in the service's cgroup: launcher and app.
 pkill -TERM -P "$pid"
 kill -TERM "$pid"
+# Watchdog: if the launcher doesn't exit, kill it so the test fails, not hangs.
+( sleep 5; pkill -KILL -P "$pid"; kill -KILL "$pid" ) >/dev/null 2>&1 &
+watchdog=$!
 wait "$pid"
 status=$?
+kill "$watchdog" 2>/dev/null
+wait "$watchdog" 2>/dev/null
 [[ $status -eq 143 && ! -e $work/systemctl.log ]] &&
     pass "SIGTERM (systemctl stop) exits 143 without powering off" ||
     fail "SIGTERM handling (status $status, systemctl: $(cat "$work/systemctl.log" 2>/dev/null))"
