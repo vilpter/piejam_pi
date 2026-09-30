@@ -19,9 +19,12 @@ Environment (set in `piejam.service`):
 ```
 QT_QPA_PLATFORM=eglfs
 QT_QPA_EGLFS_INTEGRATION=eglfs_kms
-QT_QPA_EGLFS_KMS_CONFIG=/etc/piejam/eglfs-kms.json
-QT_QPA_EGLFS_ALWAYSSET_MODE=1
+QT_QPA_EGLFS_HIDECURSOR=1
 ```
+
+`QT_QPA_EGLFS_KMS_CONFIG` is set by `bin/piejam-launch`, which picks the display
+at each boot and writes the config to `/run/piejam/eglfs-kms.json`. The launcher is
+ported from PieJam OS's Pi 5 launcher (decision D13).
 
 ## Consequences
 
@@ -29,11 +32,12 @@ QT_QPA_EGLFS_ALWAYSSET_MODE=1
 - **Good:** no window decorations or compositor, so it looks like an appliance by default.
 - **Cost:** only one DRM master at a time. Debugging other graphical tools means
   stopping `piejam.service` first.
-- **Cost:** rotation and multi-display are configured through Qt's KMS config
-  (`eglfs-kms.json`) and, for touch, libinput — not through a compositor.
-- **Risk:** the Pi 5 has separate display (`vc4`) and render (`v3d`) DRM devices. Qt must
-  open the KMS-capable card. We pin the device in `eglfs-kms.json` once it's confirmed on
-  hardware (assumption A3).
+- **Cost:** display selection is configured through Qt's KMS config rather than a
+  compositor. Rotation isn't affected: PieJam rotates its own UI in QML.
+- **Risk:** the Pi 5 has separate display (`vc4`) and render (`v3d`) DRM devices, and
+  their card numbers aren't stable. The launcher handles this by finding the card that
+  has the panel's connector at each boot. Qt's connector naming (`DSI1` rather than
+  sysfs's `DSI-1`) still needs confirming on hardware (assumption A3).
 
 ## Fallback
 

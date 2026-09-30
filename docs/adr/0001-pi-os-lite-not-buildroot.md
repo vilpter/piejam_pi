@@ -18,9 +18,13 @@ Buildroot. That gives a small, fast-booting system, but:
 
 ## Decision
 
-Start from stock **Raspberry Pi OS Lite 64-bit (Bookworm)** and turn it into an
-appliance with idempotent provisioning scripts, systemd units and boot config fragments.
-No custom OS image is built.
+Start from stock **Raspberry Pi OS Lite 64-bit** and turn it into an appliance with
+idempotent provisioning scripts, systemd units and boot config fragments. No custom OS
+image is built.
+
+The release is the one based on **Debian 13 "trixie"**. PieJam sets
+`CMAKE_CXX_STANDARD 26`, which needs GCC 14; the older bookworm-based release ships
+GCC 12 and can't build it.
 
 ## Consequences
 

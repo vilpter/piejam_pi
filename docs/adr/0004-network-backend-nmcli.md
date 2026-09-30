@@ -12,7 +12,7 @@ The fork's `network_manager` backend was written for Buildroot:
 - Commands are built as strings and run through `std::system` / `popen`, so they go
   through `/bin/sh`.
 
-On Raspberry Pi OS Lite (Bookworm), **NetworkManager** already owns the WiFi interface.
+On Raspberry Pi OS Lite, **NetworkManager** already owns the WiFi interface.
 Starting a second `wpa_supplicant` fights it. `/etc/init.d/S60nfs` doesn't exist, and NFS
 is a systemd service (`nfs-server.service`).
 

@@ -28,8 +28,10 @@ Continue the fork. Specifically:
    and `systemctl`, busybox init scripts, `modprobe brcmfmac`). Keep that commit's QML
    binding-loop fixes, which aren't Buildroot-specific.
 
-The app is built from source **on the Pi** against Bookworm's Qt 5 packages, instead of
-cross-compiled as Buildroot did. Commit `19394146` (`Fix Qt5 and buildroot
+The app is built from source **on the Pi** against trixie's GCC 14 and Qt 5.15
+packages, instead of cross-compiled as Buildroot did. PieJam builds with `-Werror`, so
+a compiler newer than upstream's may surface new warnings that fail the build;
+`PIEJAM_CMAKE_ARGS` in `provisioning/stages/50-app.sh` provides a temporary escape hatch. Commit `19394146` (`Fix Qt5 and buildroot
 cross-compilation compatibility issues`) needs a review to see which parts still apply.
 
 ## Consequences
