@@ -1,8 +1,8 @@
 #!/bin/bash
 # Stage 30: the unprivileged user PieJam runs as.
 #
-# The app keeps its config, session and recordings under $HOME
-# (~/.config/piejam.config, ~/last.pjs, ~/recordings).
+# The app keeps its settings, sessions and recordings under $HOME
+# (~/.config/, ~/sessions/, ~/recordings/).
 set -euo pipefail
 source "$(dirname "$0")/../lib.sh"
 require_root

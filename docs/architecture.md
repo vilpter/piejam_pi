@@ -14,10 +14,10 @@
 
 | Piece | Source | Treatment |
 |---|---|---|
-| Mixer app (audio engine + Qt/QML UI) | `vilpter/piejam` (fork of `nooploop/piejam`) | **Reuse**, built from source on the Pi |
-| `file_manager` module + FileBrowser UI | fork | **Reuse** unchanged |
-| `network_manager` QML + GUI models | fork | **Reuse** |
-| `network_manager` command backend | fork | **Rework** onto `nmcli`/systemd ([ADR 0004](adr/0004-network-backend-nmcli.md)) |
+| Mixer app (audio engine + Qt/QML UI) | `vilpter/piejam` (fork of `nooploop/piejam`, up to date with upstream) | **Reuse**, built from source on the Pi |
+| `network_manager` Redux state, GUI model, QML | fork | **Reuse** |
+| `network_manager` backend | fork | **Rework** onto `nmcli`/systemd ([ADR 0004](adr/0004-network-backend-nmcli.md)) |
+| `file_manager` + FileBrowser UI | earlier fork snapshot only | **Open** (O4 in the [decision log](decision-log.md)) |
 | Display-detecting launcher | PieJam OS `usr/bin/piejam` (Pi 5) | **Port** with fixes → `bin/piejam-launch` |
 | Boot config (`noaudio`, no splash, quiet, no cursor) | PieJam OS `config.txt` / `cmdline.txt` | **Replicate** as `config/boot/piejam.txt` and cmdline edits |
 | LADSPA plugin sets (SDK examples, CAPS, TAP) | PieJam OS packages | **Replicate** with Debian packages |
@@ -111,9 +111,9 @@ app needs to lock its memory (upstream's `system: add memory locking`) and avoid
 faults on the audio thread. The same limits are set in `/etc/security/limits.d/` for
 running the app by hand in a login session. That file doesn't apply to systemd services.
 
-The app keeps its data under `/home/piejam`: `~/.config/piejam.config`, the last
-session `~/last.pjs`, and `~/recordings`. It's all on the NVMe root filesystem
-(decision D12).
+The app keeps its data under `/home/piejam`: settings in `~/.config/`, sessions in
+`~/sessions/`, and recordings in `~/recordings/`. It's all on the NVMe root
+filesystem (decision D12).
 
 Privileges beyond that are narrow:
 - a polkit rule lets `piejam` power off and reboot, and manage NetworkManager

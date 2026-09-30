@@ -13,8 +13,9 @@ Buildroot. That gives a small, fast-booting system, but:
   and NFS working (`Enable WiFi and NFS kernel/firmware support`, `Switch WiFi drivers to
   kernel modules for firmware loading`, `Pin boot-critical options as built-in`).
 - Security updates mean rebuilding and reflashing the whole image.
-- Application code has to be bent around the image's gaps. The app fork's commit
-  `ac8f4c79` removed `sudo` and `systemctl` because Buildroot didn't have them.
+- Application code has to be bent around the image's gaps. The app fork's network
+  code runs busybox `udhcpc` for DHCP and controls NFS through busybox init scripts,
+  because the image had nothing more standard.
 
 ## Decision
 

@@ -51,6 +51,11 @@ Working assumptions, not facts. Each needs checking on the hardware.
   mode", where they appear as a USB drive until MSD mode is turned off. If the Scarlett
   isn't listed as a sound card, check this first.
 
+- **O4** — Should the recordings file browser come back? An earlier snapshot of the
+  fork had a `file_manager` module with a FileBrowser UI (cards, tags, ratings, notes),
+  but the current fork doesn't. It could be ported from the archived snapshot, or left
+  out.
+
 Resolved:
 - ~~O1 — Display orientation.~~ Rotation is PieJam's own `display_rotation` setting
   (PieJam OS read it from `piejam.config` for its splash screen). No KMS rotation needed.
@@ -60,29 +65,42 @@ Resolved:
 
 | # | Task | Where |
 |---|---|---|
-| F1 | Merge `nooploop/master` into the fork (10+ commits behind, including memory locking) | `vilpter/piejam`, [ADR 0003](adr/0003-fork-reuse-strategy.md) |
-| F2 | Revert the Buildroot workarounds from `ac8f4c79`; keep its QML binding-loop fixes | `vilpter/piejam` |
-| F3 | Review `19394146` (Qt 5 / Buildroot cross-compile fixes) for what still applies to native builds | `vilpter/piejam` |
-| F4 | Rework the network backend onto `nmcli`/systemd with `QProcess` argument lists. Add NFS packages and narrow sudo rules at the same time | `vilpter/piejam` + this repo, [ADR 0004](adr/0004-network-backend-nmcli.md) |
+| F1 | ~~Merge `nooploop/master` into the fork~~ Already done: the fork contains upstream's current `master` (`005feb30`) | — |
+| F2 | Remove the Buildroot-specific paths (busybox `udhcpc`, `modprobe brcmfmac`, `/etc/init.d/S60nfs`) as part of F4 | `vilpter/piejam` |
+| F3 | ~~Review the Buildroot cross-compile fixes~~ Not applicable to the current fork history | — |
+| F4 | Rework the network backend onto `nmcli`/systemd with `QProcess` argument lists; start NFS on demand, never enable it at boot. Add NFS packages and narrow privilege rules at the same time | `vilpter/piejam` + this repo, [ADR 0004](adr/0004-network-backend-nmcli.md) |
 | F5 | Emit `sd_notify READY=1` after the first frame; switch the unit to `Type=notify` | `vilpter/piejam` + this repo, [benchmark plan](benchmark-plan.md#making-m2-exact) |
 | F6 | Lint the scripts with shellcheck (it wasn't available when they were written); consider CI running shellcheck and `tests/` | This repo |
 
 ## Findings: the existing fork
 
-Recorded 2026-09-30 from `piejam-dev.bak` (fork HEAD `9fccfad0`, branched from upstream
-at `490e4c8f`). These drove D3 and D4.
+Recorded 2026-09-30 against `vilpter/piejam` at `e1291b94`, the current `master` on
+GitHub (the same as the archived `piejam-dev.bak2`). These drove D3 and D4.
 
-- The fork adds two well-structured modules, `network_manager` and `file_manager`, each
-  with tests. The `file_manager` module and all QML and GUI models are reused unchanged.
-- Commit `ac8f4c79` adapted the network code **for Buildroot**. It removed `systemctl`
-  and `sudo` and hard-coded `wpa_supplicant` and busybox `/etc/init.d/S60nfs`. None of
-  that is idiomatic on Pi OS, and the busybox init script doesn't exist there. → D4, F2.
-- WiFi credentials are passed through a shell string
-  (`wpa_cli ... ssid '"<ssid>"'`, `psk '"<password>"'`). An SSID or passphrase containing
-  `'`, `` ` ``, `$` or `\` breaks the quoting. D4 fixes this by passing arguments as a
-  list (`QProcess::start(program, args)`) with no shell.
-- The fork is 10+ commits behind upstream, including `system: add memory locking`,
-  which matters for audio-thread reliability. → F1.
+- **Up to date with upstream.** The fork contains upstream's current `master`
+  (`005feb30`, including `system: add memory locking`), plus a few later commits by the
+  upstream author.
+- **One feature module, `network_manager`:** WiFi and NFS client/server, with Redux
+  state, a `NetworkSettings` GUI model that follows upstream's patterns
+  (`SubscribableItem`, `CompositeSubscribableModel`), QML views, and tests. The state,
+  GUI model and QML are reused.
+- **WiFi drives `wpa_supplicant` directly** over its control socket, starts it if it
+  isn't running, loads `brcmfmac` with `modprobe`, and runs busybox `udhcpc` for DHCP.
+  On Pi OS, NetworkManager owns `wlan0`, its `wpa_supplicant` and DHCP, and `udhcpc`
+  isn't installed. → D4, F2.
+- **NFS server control** tries `/etc/init.d/S60nfs` and `/etc/init.d/nfs`, then falls
+  back to `systemctl … nfs-kernel-server` (argument list, no shell). The fallback also
+  enables the server at boot, which conflicts with ADR 0005. → F4.
+- **Shell use:** the remaining `std::system`/`popen` calls run fixed commands, not user
+  input. They're all Buildroot-specific and go away with F2.
+- **Recording no longer turns WiFi off.** `b4ed39af` removed that middleware.
+- **Relevant to our setup:** `ae7de8cd` removed spdlog's stdout sink because console
+  output deadlocked with DRM/fbcon under eglfs. Under systemd the app's output goes to
+  the journal instead.
+
+An earlier snapshot (`piejam-dev.bak`, February 2026, with a different history) also had
+a `file_manager` module with a FileBrowser UI, and passed WiFi credentials to `wpa_cli`
+inside a shell string. Neither is in the current fork. → O4.
 
 ## Findings: PieJam OS
 
