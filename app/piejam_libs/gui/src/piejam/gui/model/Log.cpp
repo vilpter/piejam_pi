@@ -19,19 +19,24 @@ Log::Log(runtime::state_access const& state_access)
     : CompositeSubscribableModel{state_access}
     , m_logMessages{&addQObject<StringList>()}
 {
-    spdlog::default_logger()->sinks().push_back(
-        std::make_shared<log::generic_log_sink_mt>(
-            [this](spdlog::details::log_msg const& msg) {
-                auto& logMessages =
-                    boost::polymorphic_downcast<StringList&>(*m_logMessages);
-                auto qtMsg = QString::fromStdString(
-                    std::format(
-                        "[{}] {}",
-                        spdlog::level::to_string_view(msg.level),
-                        msg.payload));
-                logMessages.add(logMessages.size(), qtMsg);
-            },
-            []() {}));
+    auto sink = std::make_shared<log::generic_log_sink_mt>(
+        [this](spdlog::details::log_msg const& msg) {
+            auto& logMessages =
+                boost::polymorphic_downcast<StringList&>(*m_logMessages);
+            auto qtMsg = QString::fromStdString(
+                std::format(
+                    "[{}] {}",
+                    spdlog::level::to_string_view(msg.level),
+                    msg.payload));
+            logMessages.add(logMessages.size(), qtMsg);
+        },
+        []() {});
+
+    // The Info page lists what a user may act on. Debug output (such as
+    // Qt's scene-graph details) still goes to the log file.
+    sink->set_level(spdlog::level::info);
+
+    spdlog::default_logger()->sinks().push_back(std::move(sink));
 }
 
 void

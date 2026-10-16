@@ -24,7 +24,7 @@ namespace
 void
 unmount_all_nfs()
 {
-    spdlog::info("Unmounting NFS shares");
+    spdlog::debug("Unmounting NFS shares");
     [[maybe_unused]]
     auto rc = std::system("umount -a -t nfs,nfs4 2>/dev/null");
 }
@@ -44,17 +44,22 @@ struct network_controller::impl
 
     impl()
     {
-        spdlog::info("Network controller initialized (NetworkManager)");
+        spdlog::debug("Network controller initialized (NetworkManager)");
     }
 
-    void set_enabled(bool value)
+    /// changed_here: the app switched the radio (logged for the user), as
+    /// opposed to a refresh finding NetworkManager's current state.
+    void set_enabled(bool value, bool changed_here)
     {
         if (enabled == value)
         {
             return;
         }
         enabled = value;
-        spdlog::info("Network {}", enabled ? "enabled" : "disabled");
+        spdlog::log(
+            changed_here ? spdlog::level::info : spdlog::level::debug,
+            "Network {}",
+            enabled ? "enabled" : "disabled");
         if (on_state_change)
         {
             on_state_change(enabled);
@@ -76,7 +81,7 @@ struct network_controller::impl
                 refresh_pending = false;
                 if (r.ok)
                 {
-                    set_enabled(r.output.starts_with("enabled"));
+                    set_enabled(r.output.starts_with("enabled"), false);
                 }
             });
     }
@@ -89,7 +94,7 @@ struct network_controller::impl
             [this, on](nmcli::result const& r) {
                 if (r.ok)
                 {
-                    set_enabled(on);
+                    set_enabled(on, true);
                     return;
                 }
                 auto const message =
@@ -133,7 +138,7 @@ network_controller::refresh()
 bool
 network_controller::enable()
 {
-    spdlog::info("Enabling WiFi");
+    spdlog::debug("Enabling WiFi");
     m_impl->set_radio(true);
     return true;
 }
@@ -144,7 +149,7 @@ network_controller::disable()
     // First unmount NFS to prevent hangs
     unmount_all_nfs();
 
-    spdlog::info("Disabling WiFi");
+    spdlog::debug("Disabling WiFi");
     m_impl->set_radio(false);
     return true;
 }

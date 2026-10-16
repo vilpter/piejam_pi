@@ -110,7 +110,7 @@ struct wifi_manager::impl
     explicit impl(std::string iface)
         : interface(std::move(iface))
     {
-        spdlog::info(
+        spdlog::debug(
             "WiFi manager initialized for interface {} (NetworkManager)",
             interface);
     }
@@ -253,7 +253,7 @@ struct wifi_manager::impl
                     cached_networks = nmcli::parse_wifi_list(r.output);
                     if (rescan)
                     {
-                        spdlog::info(
+                        spdlog::debug(
                             "WiFi scan complete, found {} networks",
                             cached_networks.size());
                     }
@@ -595,7 +595,7 @@ wifi_manager::connect(
     bool remember,
     done_callback on_done)
 {
-    spdlog::info("Connecting to WiFi network: {}", ssid);
+    spdlog::debug("Connecting to WiFi network: {}", ssid);
 
     done_callback done =
         [ssid,
@@ -675,7 +675,7 @@ wifi_manager::disconnect(done_callback on_done)
 void
 wifi_manager::reconnect(done_callback on_done)
 {
-    spdlog::info("Reconnecting to WiFi");
+    spdlog::debug("Reconnecting to WiFi");
     m_impl->run(
         {"--wait", "60", "device", "connect", qs(m_impl->interface)},
         [impl = m_impl.get(),
@@ -778,7 +778,7 @@ void
 wifi_manager::set_auto_reconnect(bool enabled)
 {
     m_impl->auto_reconnect_enabled = enabled;
-    spdlog::info("Auto-reconnect {}", enabled ? "enabled" : "disabled");
+    spdlog::debug("Auto-reconnect {}", enabled ? "enabled" : "disabled");
 }
 
 bool
