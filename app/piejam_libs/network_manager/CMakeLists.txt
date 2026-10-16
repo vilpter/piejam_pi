@@ -9,6 +9,7 @@ set(CMAKE_AUTOMOC ON)
 add_library(piejam_network_manager STATIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include/piejam/network_manager/fwd.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include/piejam/network_manager/network_controller.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/piejam/network_manager/nmcli.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include/piejam/network_manager/wifi_network.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include/piejam/network_manager/wifi_manager.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include/piejam/network_manager/wifi_network_model.h
@@ -17,6 +18,7 @@ add_library(piejam_network_manager STATIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include/piejam/network_manager/nfs_client.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include/piejam/network_manager/nfs_mount_model.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/piejam/network_manager/network_controller.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/piejam/network_manager/nmcli.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/piejam/network_manager/wifi_manager.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/piejam/network_manager/wifi_network_model.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/piejam/network_manager/nfs_server.cpp

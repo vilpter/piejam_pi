@@ -8,21 +8,23 @@
 
 #include <functional>
 #include <memory>
+#include <string>
 
 namespace piejam::network_manager
 {
 
 /// Controls network functionality (WiFi, NFS).
 ///
-/// This class provides:
-/// - Manual enable/disable of all network interfaces
-/// - State persistence across sessions
-/// - Callbacks for state change notifications
+/// "Network enabled" is NetworkManager's WiFi radio switch. NetworkManager
+/// remembers it across reboots, and turning it off drops any WiFi
+/// connection. Operations are asynchronous and report on the calling
+/// thread, which must run a Qt event loop (the GUI thread).
 class network_controller
 {
 public:
     /// Callback type for network state changes
     using state_change_callback = std::function<void(bool enabled)>;
+    using error_callback = std::function<void(std::string const&)>;
 
     network_controller();
     ~network_controller();
@@ -33,19 +35,27 @@ public:
     network_controller(network_controller&&) noexcept;
     network_controller& operator=(network_controller&&) noexcept;
 
-    /// Returns true if network is currently enabled
-    [[nodiscard]] bool is_enabled() const noexcept;
+    /// Returns true if network was enabled at the last refresh or change
+    [[nodiscard]]
+    bool is_enabled() const noexcept;
 
-    /// Enable network interfaces (WiFi)
-    /// Returns true if operation succeeded
+    /// Read the WiFi radio state from NetworkManager. Fires the state
+    /// change callback if it changed.
+    void refresh();
+
+    /// Turn the WiFi radio on
+    /// Returns true if the request was sent
     bool enable();
 
-    /// Disable network interfaces (WiFi, unmount NFS)
-    /// Returns true if operation succeeded
+    /// Unmount NFS shares and turn the WiFi radio off
+    /// Returns true if the request was sent
     bool disable();
 
     /// Register callback for network state changes
     void set_state_change_callback(state_change_callback cb);
+
+    /// Register callback for errors
+    void set_error_callback(error_callback cb);
 
 private:
     struct impl;

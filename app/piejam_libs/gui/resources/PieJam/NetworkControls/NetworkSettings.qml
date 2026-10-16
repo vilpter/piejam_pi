@@ -38,6 +38,11 @@ SubscribableItem {
                     if (root.model) {
                         root.model.toggleNetwork()
                     }
+                    // Show NetworkManager's state, not the tap: the switch
+                    // moves once the radio has actually been switched.
+                    checked = Qt.binding(function() {
+                        return root.model ? root.model.networkEnabled : false
+                    })
                 }
             }
 

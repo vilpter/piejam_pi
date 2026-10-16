@@ -127,6 +127,7 @@ signals:
 private:
     void onSubscribe() override;
     void setupCallbacks();
+    void pollStatus();
     void updateWifiStatus();
     void updateNfsServerStatus();
     void updateNfsClientStatus();

@@ -17,8 +17,9 @@
 
 #include <spdlog/spdlog.h>
 
-#include <QTimer>
+#include <QPointer>
 
+#include <chrono>
 
 namespace piejam::gui::model
 {
@@ -33,6 +34,8 @@ struct NetworkSettings::impl
     network_manager::WiFiNetworkModel* availableNetworksModel{};
     network_manager::WiFiSavedNetworkModel* savedNetworksModel{};
     network_manager::NFSMountModel* nfsMountModel{};
+
+    bool connectPending{};
 };
 
 NetworkSettings::NetworkSettings(
@@ -59,7 +62,23 @@ NetworkSettings::NetworkSettings(
     setupCallbacks();
 }
 
-NetworkSettings::~NetworkSettings() = default;
+NetworkSettings::~NetworkSettings()
+{
+    // The backends outlive this model; stop them calling back into it.
+    if (m_impl->networkController)
+    {
+        m_impl->networkController->set_state_change_callback({});
+        m_impl->networkController->set_error_callback({});
+    }
+
+    if (m_impl->wifiManager)
+    {
+        m_impl->wifiManager->set_scan_complete_callback({});
+        m_impl->wifiManager->set_connection_changed_callback({});
+        m_impl->wifiManager->set_saved_networks_callback({});
+        m_impl->wifiManager->set_error_callback({});
+    }
+}
 
 void
 NetworkSettings::onSubscribe()
@@ -92,11 +111,31 @@ NetworkSettings::onSubscribe()
         });
 
     refreshStatus();
+
+    // NetworkManager connects, reconnects and drops WiFi on its own, so
+    // follow it while the page is visible.
+    requestUpdates(std::chrono::seconds{3}, [this]() { pollStatus(); });
+}
+
+void
+NetworkSettings::pollStatus()
+{
+    if (m_impl->networkController)
+    {
+        m_impl->networkController->refresh();
+    }
+
+    if (m_impl->wifiManager)
+    {
+        m_impl->wifiManager->refresh_status();
+    }
 }
 
 void
 NetworkSettings::setupCallbacks()
 {
+    // The backends call back on the Qt main thread (they run nmcli through
+    // QProcess), so no marshalling is needed.
     if (m_impl->networkController)
     {
         m_impl->networkController->set_state_change_callback(
@@ -105,38 +144,46 @@ NetworkSettings::setupCallbacks()
                 action.enabled = enabled;
                 dispatch(action);
             });
+
+        m_impl->networkController->set_error_callback(
+            [this](std::string const& error) {
+                emit networkError(QString::fromStdString(error));
+            });
     }
 
     if (m_impl->wifiManager)
     {
         m_impl->wifiManager->set_scan_complete_callback(
-            [this](std::vector<network_manager::wifi_network> const&
-                       networks) {
-                // Callback may fire from any thread — marshal to Qt thread
-                auto nets = networks;
-                QMetaObject::invokeMethod(
-                    this,
-                    [this, nets = std::move(nets)]() {
-                        m_impl->availableNetworksModel->setNetworks(nets);
-                        setIsScanning(false);
-                        emit scanCompleted();
-                    });
+            [this](std::vector<network_manager::wifi_network> const& networks) {
+                m_impl->availableNetworksModel->setNetworks(networks);
+                setIsScanning(false);
+                emit scanCompleted();
+            });
+
+        m_impl->wifiManager->set_saved_networks_callback(
+            [this](
+                std::vector<network_manager::wifi_saved_network> const&
+                    networks) {
+                m_impl->savedNetworksModel->setNetworks(networks);
             });
 
         m_impl->wifiManager->set_connection_changed_callback(
             [this](
                 network_manager::wifi_connection_status status,
                 network_manager::wifi_network const* network) {
-                // This callback now fires from the Qt main thread
-                // (via poll_connection / update_connection_status).
                 bool connected =
                     (status ==
                      network_manager::wifi_connection_status::connected);
 
                 setWifiConnected(connected);
-                setIsConnecting(
-                    status == network_manager::wifi_connection_status::
-                                  connecting);
+                // An explicit connect attempt keeps isConnecting set
+                // until it finishes.
+                if (!m_impl->connectPending)
+                {
+                    setIsConnecting(
+                        status ==
+                        network_manager::wifi_connection_status::connecting);
+                }
 
                 if (connected && network)
                 {
@@ -173,13 +220,7 @@ NetworkSettings::setupCallbacks()
 
         m_impl->wifiManager->set_error_callback(
             [this](std::string const& error) {
-                // Marshal signal emission to Qt thread
-                auto err = error;
-                QMetaObject::invokeMethod(
-                    this,
-                    [this, err = std::move(err)]() {
-                        emit networkError(QString::fromStdString(err));
-                    });
+                emit networkError(QString::fromStdString(error));
             });
     }
 
@@ -320,6 +361,8 @@ NetworkSettings::disableNetwork()
 void
 NetworkSettings::toggleNetwork()
 {
+    // The switch follows networkEnabled, which updates once
+    // NetworkManager has switched the radio.
     if (m_impl->networkController)
     {
         if (m_impl->networkController->is_enabled())
@@ -330,8 +373,6 @@ NetworkSettings::toggleNetwork()
         {
             m_impl->networkController->enable();
         }
-
-        setNetworkEnabled(m_impl->networkController->is_enabled());
     }
 }
 
@@ -354,85 +395,32 @@ NetworkSettings::connectToNetwork(
     if (!m_impl->wifiManager)
         return;
 
+    m_impl->connectPending = true;
     setIsConnecting(true);
 
-    auto ssidStd = ssid.toStdString();
-    auto passwordStd = password.toStdString();
-
-    // Non-blocking: configure wpa_supplicant and issue SELECT_NETWORK
-    // on the Qt main thread (all wpa commands use Unix socket, no fork).
-    int network_id = m_impl->wifiManager->connect_start(
-        ssidStd, passwordStd, remember);
-
-    if (network_id < 0)
-    {
-        setIsConnecting(false);
-        emit connectionFailed(ssid, tr("Failed to configure network"));
-        return;
-    }
-
-    // Poll wpa_supplicant STATUS every second from the main thread
-    auto* timer = new QTimer(this);
-    int* attempts = new int(0);
-    auto ssidCopy = ssid;
-
-    connect(timer, &QTimer::timeout, this,
-        [this, timer, attempts, ssidCopy, remember, network_id]() {
-            auto status = m_impl->wifiManager->poll_connection();
-
-            if (status ==
-                piejam::network_manager::wifi_connection_status::connected)
+    // NetworkManager connects asynchronously; the callback runs on the Qt
+    // main thread when it has succeeded or given up.
+    m_impl->wifiManager->connect(
+        ssid.toStdString(),
+        password.toStdString(),
+        remember,
+        [self = QPointer<NetworkSettings>{this},
+         ssid](bool ok, std::string const& error) {
+            if (!self)
             {
-                timer->stop();
-                timer->deleteLater();
-                delete attempts;
-
-                setIsConnecting(false);
-                spdlog::info("Connected to {}", ssidCopy.toStdString());
-
-                if (remember)
-                    m_impl->wifiManager->save_config();
-
-                auto saved = m_impl->wifiManager->saved_networks();
-                m_impl->savedNetworksModel->setNetworks(std::move(saved));
-
-                // Start IP address polling (udhcpc runs async)
-                auto* ipTimer = new QTimer(this);
-                int* ipAttempts = new int(0);
-                connect(ipTimer, &QTimer::timeout, this,
-                    [this, ipTimer, ipAttempts]() {
-                        auto ip = QString::fromStdString(
-                            m_impl->wifiManager->ip_address());
-                        if (!ip.isEmpty())
-                        {
-                            setIpAddress(ip);
-                            ipTimer->stop();
-                            ipTimer->deleteLater();
-                            delete ipAttempts;
-                        }
-                        else if (++(*ipAttempts) >= 15)
-                        {
-                            spdlog::warn("DHCP timeout: no IP after 15s");
-                            ipTimer->stop();
-                            ipTimer->deleteLater();
-                            delete ipAttempts;
-                        }
-                    });
-                ipTimer->start(1000);
+                return;
             }
-            else if (++(*attempts) >= 20)
-            {
-                timer->stop();
-                timer->deleteLater();
-                delete attempts;
 
-                spdlog::warn("Connection timeout for {}",
-                    ssidCopy.toStdString());
-                setIsConnecting(false);
-                emit connectionFailed(ssidCopy, tr("Connection timeout"));
+            self->m_impl->connectPending = false;
+            self->setIsConnecting(false);
+
+            if (!ok)
+            {
+                emit self->connectionFailed(
+                    ssid,
+                    QString::fromStdString(error));
             }
         });
-    timer->start(1000);
 }
 
 void
@@ -450,9 +438,6 @@ NetworkSettings::forgetNetwork(QString const& ssid)
     if (m_impl->wifiManager)
     {
         m_impl->wifiManager->forget_network(ssid.toStdString());
-
-        auto saved = m_impl->wifiManager->saved_networks();
-        m_impl->savedNetworksModel->setNetworks(std::move(saved));
     }
 }
 
@@ -664,18 +649,24 @@ NetworkSettings::getNfsServerExports(QString const& serverHost)
 void
 NetworkSettings::refreshStatus()
 {
+    // Show what's known now, then ask NetworkManager for fresh state; the
+    // callbacks fill in the rest.
     updateWifiStatus();
     updateNfsServerStatus();
     updateNfsClientStatus();
 
     if (m_impl->wifiManager)
     {
-        auto const& networks = m_impl->wifiManager->available_networks();
-        m_impl->availableNetworksModel->setNetworks(networks);
+        m_impl->availableNetworksModel->setNetworks(
+            m_impl->wifiManager->available_networks());
+        m_impl->savedNetworksModel->setNetworks(
+            m_impl->wifiManager->saved_networks());
 
-        auto saved = m_impl->wifiManager->saved_networks();
-        m_impl->savedNetworksModel->setNetworks(std::move(saved));
+        m_impl->wifiManager->list_networks();
+        m_impl->wifiManager->refresh_saved_networks();
     }
+
+    pollStatus();
 }
 
 } // namespace piejam::gui::model

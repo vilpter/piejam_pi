@@ -18,20 +18,22 @@ namespace piejam::network_manager
 /// Connection status for WiFi
 enum class wifi_connection_status
 {
-    disconnected,   ///< Not connected to any network
-    connecting,     ///< Connection in progress
-    connected,      ///< Successfully connected
-    failed          ///< Connection attempt failed
+    disconnected, ///< Not connected to any network
+    connecting,   ///< Connection in progress
+    connected,    ///< Successfully connected
+    failed        ///< Connection attempt failed
 };
 
-/// Manages WiFi connections via wpa_supplicant.
+/// Manages WiFi through NetworkManager (nmcli).
 ///
-/// This class provides:
-/// - Network scanning
-/// - Connection management
-/// - Saved networks with priority ordering
-/// - Auto-reconnect logic
-/// - Status monitoring
+/// NetworkManager owns the interface, its wpa_supplicant and DHCP, and
+/// keeps saved networks across reboots. This class mirrors its state for
+/// the UI and asks it to scan, connect, disconnect and forget.
+///
+/// All operations are asynchronous: they return immediately and report
+/// through callbacks on the calling thread, which must run a Qt event loop
+/// (the GUI thread). The status getters return the state seen by the last
+/// refresh_status() and never block.
 class wifi_manager
 {
 public:
@@ -40,7 +42,12 @@ public:
         std::function<void(std::vector<wifi_network> const&)>;
     using connection_changed_callback =
         std::function<void(wifi_connection_status, wifi_network const*)>;
+    using saved_networks_callback =
+        std::function<void(std::vector<wifi_saved_network> const&)>;
     using error_callback = std::function<void(std::string const&)>;
+    /// Result of an operation: success, or failure with a message.
+    using done_callback =
+        std::function<void(bool ok, std::string const& error)>;
 
     /// Construct WiFi manager for specified interface
     /// @param interface Network interface name (default: "wlan0")
@@ -55,60 +62,78 @@ public:
 
     // --- Status ---
 
+    /// Ask NetworkManager for the interface's current state. Fires the
+    /// connection_changed callback if the status, SSID, IP address or
+    /// signal changed.
+    void refresh_status();
+
     /// Get current connection status
-    [[nodiscard]] wifi_connection_status status() const noexcept;
+    [[nodiscard]]
+    wifi_connection_status status() const noexcept;
 
     /// Get current SSID if connected
-    [[nodiscard]] std::string current_ssid() const;
+    [[nodiscard]]
+    std::string current_ssid() const;
 
     /// Get current IP address if connected
-    [[nodiscard]] std::string ip_address() const;
+    [[nodiscard]]
+    std::string ip_address() const;
 
     /// Get signal strength of current connection (0-100)
-    [[nodiscard]] int signal_strength() const;
+    [[nodiscard]]
+    int signal_strength() const;
 
     /// Check if WiFi interface is available
-    [[nodiscard]] bool is_interface_available() const;
+    [[nodiscard]]
+    bool is_interface_available() const;
 
     // --- Scanning ---
 
-    /// Initiate async network scan
-    /// Results delivered via scan_complete_callback
+    /// Scan for networks. Results are delivered via scan_complete_callback;
+    /// on failure, the error callback fires and the previous list is
+    /// delivered again.
     void scan_networks();
 
+    /// List the networks NetworkManager already knows about, without a new
+    /// scan. Results are delivered via scan_complete_callback.
+    void list_networks();
+
     /// Get cached list of networks from last scan
-    [[nodiscard]] std::vector<wifi_network> const& available_networks() const;
+    [[nodiscard]]
+    std::vector<wifi_network> const& available_networks() const;
 
     // --- Connection Management ---
 
-    /// Start connecting to a network (non-blocking).
-    /// Configures wpa_supplicant and issues SELECT_NETWORK, then returns
-    /// immediately. Caller should poll with poll_connection().
-    /// @return network_id on success, -1 on setup failure
-    int connect_start(
+    /// Connect to a network. A saved network is activated as saved, unless
+    /// a new password is given. A new network gets a profile that is kept
+    /// across reboots only if remember is true. The password is passed to
+    /// NetworkManager on standard input, never on a command line.
+    void connect(
         std::string const& ssid,
         std::string const& password,
-        bool remember);
-
-    /// Poll connection status once after connect_start().
-    /// @return current status (connected / connecting / disconnected / failed)
-    wifi_connection_status poll_connection();
+        bool remember,
+        done_callback on_done);
 
     /// Disconnect from current network
-    void disconnect();
+    void disconnect(done_callback on_done = {});
 
-    /// Reconnect to current or last known network
-    void reconnect();
+    /// Reconnect to the best available saved network
+    void reconnect(done_callback on_done = {});
 
     // --- Saved Networks ---
 
-    /// Get list of saved networks
-    [[nodiscard]] std::vector<wifi_saved_network> saved_networks() const;
+    /// Ask NetworkManager for its saved WiFi profiles. Results are
+    /// delivered via saved_networks_callback.
+    void refresh_saved_networks();
+
+    /// Get list of saved networks, as of the last refresh
+    [[nodiscard]]
+    std::vector<wifi_saved_network> const& saved_networks() const;
 
     /// Remove a saved network
     /// @param ssid Network to forget
-    /// @return true if network was found and removed
-    bool forget_network(std::string const& ssid);
+    /// @return true if network was found in the saved list
+    bool forget_network(std::string const& ssid, done_callback on_done = {});
 
     /// Set priority for a saved network
     /// @param ssid Network name
@@ -118,17 +143,15 @@ public:
     /// Enable/disable auto-connect for a saved network
     void set_network_auto_connect(std::string const& ssid, bool enabled);
 
-    /// Persist current network configuration to wpa_supplicant.conf
-    /// Requires update_config=1 in the config file.
-    void save_config();
-
     // --- Auto-reconnect ---
 
-    /// Enable automatic reconnection when connection drops
+    /// NetworkManager reconnects to saved networks by itself; this flag is
+    /// kept for the UI's sake and doesn't change its behavior.
     void set_auto_reconnect(bool enabled);
 
     /// Check if auto-reconnect is enabled
-    [[nodiscard]] bool auto_reconnect() const noexcept;
+    [[nodiscard]]
+    bool auto_reconnect() const noexcept;
 
     // --- Callbacks ---
 
@@ -137,6 +160,9 @@ public:
 
     /// Register callback for connection status changes
     void set_connection_changed_callback(connection_changed_callback cb);
+
+    /// Register callback for saved network list updates
+    void set_saved_networks_callback(saved_networks_callback cb);
 
     /// Register callback for errors
     void set_error_callback(error_callback cb);
