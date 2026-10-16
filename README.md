@@ -1,7 +1,7 @@
 # piejam_pi
 
 Turn a **Raspberry Pi 5** into a single-purpose, touchscreen **audio-mixer appliance**
-running [PieJam](https://github.com/vilpter/piejam) — booting from NVMe straight into a
+running [PieJam](app/) — booting from NVMe straight into a
 full-screen mixer, with no desktop, login screen, panel, or window decorations.
 
 This is the spiritual successor to [PieJam OS](https://github.com/nooploop/piejam_os),
@@ -52,7 +52,13 @@ a time. When they conflict, maintainability wins over raw boot speed.
 
 1. Flash **Raspberry Pi OS Lite (64-bit)** to the NVMe drive, set the bootloader to
    boot from NVMe, and enable SSH. Details: [provisioning/README.md](provisioning/README.md#prerequisites).
-2. Boot the Pi, SSH in, and clone this repository.
+2. Boot the Pi, SSH in, and clone this repository with its submodules:
+
+   ```sh
+   git clone --recurse-submodules https://github.com/vilpter/piejam_pi.git
+   cd piejam_pi
+   ```
+
 3. Provision it:
 
    ```sh
@@ -66,6 +72,7 @@ a time. When they conflict, maintainability wins over raw boot speed.
 ## Repository layout
 
 ```
+app/                   The PieJam mixer app (C++/Qt), forked from nooploop/piejam; GPL-3.0
 bin/piejam-launch      Display detection and app launcher (installed to /usr/local/lib/piejam)
 systemd/               piejam.service and the audio-ready milestone unit
 config/                Boot, udev, polkit and limits files the provisioning installs
@@ -85,11 +92,13 @@ tests/lint.sh                    # shellcheck on every shell script (needs shell
 
 ## Related repositories
 
-- [`vilpter/piejam`](https://github.com/vilpter/piejam) — the mixer application (fork of `nooploop/piejam`).
+- [`vilpter/piejam`](https://github.com/vilpter/piejam) — the app's previous home (archived); its
+  `master` at `e1291b94` was imported into `app/`.
 - [`nooploop/piejam`](https://github.com/nooploop/piejam) — upstream application.
 - [`nooploop/piejam_os`](https://github.com/nooploop/piejam_os) — upstream Buildroot image this project replaces.
 
 ## License
 
 The tooling in this repository is MIT-licensed (see [LICENSE](LICENSE)). The PieJam
-application it installs is licensed separately under GPL-3.0 by its authors.
+application in [`app/`](app/) is GPL-3.0-or-later (see [app/LICENSE.md](app/LICENSE.md)),
+by its authors, and keeps its own license headers.

@@ -14,7 +14,7 @@
 
 | Piece | Source | Treatment |
 |---|---|---|
-| Mixer app (audio engine + Qt/QML UI) | `vilpter/piejam` (fork of `nooploop/piejam`, up to date with upstream) | **Reuse**, built from source on the Pi |
+| Mixer app (audio engine + Qt/QML UI) | `app/` in this repository, imported from `vilpter/piejam` (fork of `nooploop/piejam`, up to date with upstream) | **Reuse**, built from source on the Pi |
 | `network_manager` Redux state, GUI model, QML | fork | **Reuse** |
 | `network_manager` backend | fork | **Rework** onto `nmcli`/systemd ([ADR 0004](adr/0004-network-backend-nmcli.md)) |
 | `file_manager` + FileBrowser UI | earlier fork snapshot only | **Open** (O4 in the [decision log](decision-log.md)) |

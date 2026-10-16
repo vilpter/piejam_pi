@@ -1,0 +1,53 @@
+# SPDX-FileCopyrightText: 2020-2026 Dimitrij Kotrev
+#
+# SPDX-License-Identifier: CC0-1.0
+
+if(NOT PIEJAM_TESTS)
+    return()
+endif()
+
+add_executable(piejam_audio_test
+    component_mock.h
+    dag_test.cpp
+    dsp_pitch_yin_test.cpp
+    event_buffer_memory_test.cpp
+    event_buffer_test.cpp
+    event_converter_processor_test.cpp
+    event_identity_processor_test.cpp
+    event_input_buffers_test.cpp
+    event_output_buffers_test.cpp
+    event_test.cpp
+    fake_processor.h
+    graph_algorithms_test.cpp
+    graph_test.cpp
+    graph_to_dag_test.cpp
+    identity_processor_test.cpp
+    input_processor_test.cpp
+    io_process_test.cpp
+    lockstep_events_test.cpp
+    mix_processor_test.cpp
+    multichannel_buffer_test.cpp
+    multiply_processor_test.cpp
+    output_processor_test.cpp
+    pan_balance_processor_test.cpp
+    pan_component_test.cpp
+    pan_test.cpp
+    pcm_convert_test.cpp
+    pitch_test.cpp
+    process_test.cpp
+    process_thread_test.cpp
+    processor_mock.h
+    rt_task_executor_test.cpp
+    sample_rate_test.cpp
+    slice_algorithms_test.cpp
+    slice_test.cpp
+    smoother_processor_test.cpp
+    stream_processor_test.cpp
+    stream_ring_buffer_test.cpp
+    value_io_processor_test.cpp
+)
+target_link_libraries(piejam_audio_test gtest_driver gmock piejam_compiler_warnings piejam_audio piejam_range)
+
+add_test(NAME piejam_audio_test COMMAND piejam_audio_test)
+
+install(TARGETS piejam_audio_test RUNTIME DESTINATION bin)

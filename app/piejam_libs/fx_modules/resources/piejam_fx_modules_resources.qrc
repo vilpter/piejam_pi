@@ -1,0 +1,17 @@
+<!--
+SPDX-FileCopyrightText: 2020-2026 Dimitrij Kotrev
+
+SPDX-License-Identifier: CC0-1.0
+-->
+
+<RCC>
+    <qresource prefix="/">
+        <file>images/icons/falling_edge.svg</file>
+        <file>images/icons/rising_edge.svg</file>
+        <file>images/icons/snow.svg</file>
+        <file>PieJam/FxModules/FilterView.qml</file>
+        <file>PieJam/FxModules/ScopeView.qml</file>
+        <file>PieJam/FxModules/SpectrumView.qml</file>
+        <file>PieJam/FxModules/TunerView.qml</file>
+    </qresource>
+</RCC>

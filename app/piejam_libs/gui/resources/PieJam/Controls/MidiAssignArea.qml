@@ -1,0 +1,100 @@
+// PieJam - An audio mixer for Raspberry Pi.
+// SPDX-FileCopyrightText: 2020-2026  Dimitrij Kotrev
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import QtQuick 2.15
+import QtQuick.Controls 2.15
+import QtQuick.Controls.Material 2.15
+
+import PieJam.Models 1.0 as PJModels
+
+SubscribableItem {
+    id: root
+
+    property PJModels.MidiAssignable model: null
+
+    implicitWidth: 100
+    implicitHeight: 100
+
+    Label {
+        id: assignmentLabel
+
+        readonly property color unassignedColor: "#80eeb72b"
+        readonly property color unassignedLearnColor: "#30eeb72b"
+        readonly property color unassignedBorderColor: "#eeb72b"
+        readonly property color assignedColor: "#806bea04"
+        readonly property color assignedLearnColor: "#306bea04"
+        readonly property color assignedBorderColor: "#6bea04"
+
+        readonly property bool assigned: root.model ? root.model.assignment !== "" : false
+        readonly property color backgroundColor: assigned ? assignedColor : unassignedColor
+        readonly property color backgroundLearnColor: assigned ? assignedLearnColor : unassignedLearnColor
+        readonly property color borderColor: assigned ? assignedBorderColor : unassignedBorderColor
+
+        anchors.fill: parent
+
+        font.pixelSize: 11
+        wrapMode: Text.WordWrap
+        textFormat: Text.PlainText
+        font.bold: true
+        padding: 2
+        color: "#ffffff"
+        text: root.model ? root.model.assignment : ""
+
+        background: Rectangle {
+            id: background
+
+            color: assignmentLabel.backgroundColor
+            border.color: assignmentLabel.borderColor
+            border.width: 2
+
+            SequentialAnimation on color {
+                running: root.model && root.model.learning
+                loops: Animation.Infinite
+
+                ColorAnimation {
+                    target: background
+                    property: "color"
+                    from: assignmentLabel.backgroundColor
+                    to: assignmentLabel.backgroundLearnColor
+                    duration: 500
+                }
+
+                ColorAnimation {
+                    target: background
+                    property: "color"
+                    from: assignmentLabel.backgroundLearnColor
+                    to: assignmentLabel.backgroundColor
+                    duration: 500
+                }
+
+                onStopped: background.color = Qt.binding(function() { return assignmentLabel.backgroundColor })
+            }
+        }
+    }
+
+    MouseArea {
+        id: clickArea
+
+        anchors.fill: parent
+
+        onClicked: {
+            console.assert(root.model)
+
+            if (root.model.learning) {
+                root.model.stopLearn()
+            } else {
+                root.model.startLearn()
+            }
+        }
+
+        onDoubleClicked: {
+            console.assert(root.model)
+
+            root.model.clearAssignment()
+        }
+    }
+
+    enabled: root.model && MidiLearn.active
+    visible: root.model && MidiLearn.active
+}

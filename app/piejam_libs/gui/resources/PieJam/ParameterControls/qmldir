@@ -1,0 +1,9 @@
+# SPDX-FileCopyrightText: 2020-2026 Dimitrij Kotrev
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+module PieJam.ParameterControls
+EnumComboBox 1.0 EnumComboBox.qml
+ParameterSymmetricBipolarSlider 1.0 ParameterSymmetricBipolarSlider.qml
+ParameterToggleButton 1.0 ParameterToggleButton.qml
+ValueLabel 1.0 ValueLabel.qml

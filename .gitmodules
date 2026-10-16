@@ -1,0 +1,6 @@
+[submodule "app/libs/nod"]
+	path = app/libs/nod
+	url = https://github.com/fr00b0/nod.git
+[submodule "app/libs/MIPP"]
+	path = app/libs/MIPP
+	url = https://github.com/aff3ct/MIPP.git
