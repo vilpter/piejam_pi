@@ -34,18 +34,19 @@ Any failed edit stops provisioning with an error.
 | `20-boot-config` | Installs `/boot/firmware/piejam.txt` and includes it from `config.txt`; adds `noaudio` to the KMS overlay; quiets the kernel command line. |
 | `30-user` | Creates the `piejam` user and installs its polkit rule and real-time limits. |
 | `40-audio` | Installs the Scarlett udev rule and the "audio ready" milestone unit. |
-| `50-app` | Clones, builds and installs PieJam from `vilpter/piejam`. |
+| `50-app` | Builds and installs PieJam from `app/`; fetches the app's submodules if the clone lacks them. |
 | `60-appliance` | Installs the launcher and `piejam.service`; disables `getty@tty1` and `NetworkManager-wait-online`; enables SSH. |
 
 ## Building PieJam (`50-app`)
 
+Stage 50 builds whatever `app/` holds in this checkout, so pulling and re-running it
+updates the app. The build directory is kept and builds are incremental.
+
 | Variable | Default | Purpose |
 |---|---|---|
-| `PIEJAM_REPO` | `https://github.com/vilpter/piejam.git` | Repository to build |
-| `PIEJAM_REF` | `master` | Branch, tag or commit |
-| `PIEJAM_SRC_DIR` | `/usr/local/src/piejam` | Checkout location |
+| `PIEJAM_BUILD_DIR` | `/usr/local/src/piejam-build` | Build directory |
 | `PIEJAM_CMAKE_ARGS` | _(empty)_ | Extra CMake arguments |
-| `PIEJAM_FORCE_BUILD` | `0` | `1` rebuilds even if that commit is installed |
+| `PIEJAM_FORCE_BUILD` | `0` | `1` starts from an empty build directory |
 
 PieJam builds with `-Werror`. If a newer compiler adds warnings upstream hasn't
 seen yet, get unblocked with `PIEJAM_CMAKE_ARGS="-DCMAKE_CXX_FLAGS=-Wno-error"`, then

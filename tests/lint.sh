@@ -4,7 +4,8 @@
 # Problems are only reported for the files passed in, not for files they
 # source, so scripts are discovered rather than listed: anything with a sh/bash
 # shebang, plus files that declare a "shellcheck shell=" directive (such as
-# provisioning/lib.sh, which is sourced and has no shebang).
+# provisioning/lib.sh, which is sourced and has no shebang). The app under app/
+# follows its own upstream conventions and isn't linted here.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -20,7 +21,7 @@ while IFS= read -r f; do
        grep -q '^# shellcheck shell=' "$f"; then
         files+=("$f")
     fi
-done < <(git ls-files --cached --others --exclude-standard)
+done < <(git ls-files --cached --others --exclude-standard -- . ':!app')
 
 (( ${#files[@]} )) || { echo "no shell scripts found" >&2; exit 1; }
 shellcheck "${files[@]}"

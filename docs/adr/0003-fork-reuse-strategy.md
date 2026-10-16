@@ -41,6 +41,17 @@ a compiler newer than upstream's may surface new warnings that fail the build;
 - **Risk:** building on the Pi is slower than cross-compiling. Fine for a baseline;
   if it gets painful, package the build as a `.deb` built in CI (arm64).
 
+## Amendment (2026-10-15): the app moves into this repository
+
+`vilpter/piejam` was archived, so its `master` (`e1291b94`) was imported unchanged into
+`app/` here, with its two libraries as submodules at the same commits. App changes
+now go through pull requests in this repository, and stage `50-app` builds `app/` from
+the checkout instead of cloning.
+
+Following upstream works as before, at the level of patches: apply the change between
+two upstream commits under `app/`, for example
+`git -C ../piejam diff OLD..NEW | git apply --directory=app --3way`.
+
 ## Alternatives considered
 
 - **Upstream unchanged.** Loses the network features.

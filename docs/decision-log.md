@@ -26,6 +26,7 @@ default chosen to avoid blocking; revisit freely) · **Open** (needs an answer).
 | D14 | 2026-09-30 | Quitting from the UI powers the Pi off (PieJam OS behavior); `systemctl stop piejam` doesn't | Default | [architecture](architecture.md#power-and-recovery) |
 | D15 | 2026-09-30 | Rely on Pi OS's `display_auto_detect=1` for the Gen 1 panel (as PieJam OS's Pi 5 image did) rather than an explicit overlay | Default | — |
 | D16 | 2026-10-15 | `piejam.service` allows real-time priority up to 99 but keeps memory locking limited (8 MB): PieJam's `mlockall(MCL_FUTURE)` crashes Debian's Qt 5 QML engine if it succeeds | Default | [architecture](architecture.md#runtime-user) |
+| D17 | 2026-10-15 | The app's source lives in this repository under `app/` (imported from `vilpter/piejam` `e1291b94`, which is archived); app changes go through pull requests here | Decided | [ADR 0003](adr/0003-fork-reuse-strategy.md#amendment-2026-10-15-the-app-moves-into-this-repository) |
 
 ## Assumptions
 
@@ -67,10 +68,10 @@ Resolved:
 | # | Task | Where |
 |---|---|---|
 | F1 | ~~Merge `nooploop/master` into the fork~~ Already done: the fork contains upstream's current `master` (`005feb30`) | — |
-| F2 | Remove the Buildroot-specific paths (busybox `udhcpc`, `modprobe brcmfmac`, `/etc/init.d/S60nfs`) as part of F4 | `vilpter/piejam` |
+| F2 | Remove the Buildroot-specific paths (busybox `udhcpc`, `modprobe brcmfmac`, `/etc/init.d/S60nfs`) as part of F4 | `app/` |
 | F3 | ~~Review the Buildroot cross-compile fixes~~ Not applicable to the current fork history | — |
-| F4 | Rework the network backend onto `nmcli`/systemd with `QProcess` argument lists; start NFS on demand, never enable it at boot. Add NFS packages and narrow privilege rules at the same time | `vilpter/piejam` + this repo, [ADR 0004](adr/0004-network-backend-nmcli.md) |
-| F5 | Emit `sd_notify READY=1` after the first frame; switch the unit to `Type=notify` | `vilpter/piejam` + this repo, [benchmark plan](benchmark-plan.md#making-m2-exact) |
+| F4 | Rework the network backend onto `nmcli`/systemd with `QProcess` argument lists; start NFS on demand, never enable it at boot. Add NFS packages and narrow privilege rules at the same time | `app/` + provisioning, [ADR 0004](adr/0004-network-backend-nmcli.md) |
+| F5 | Emit `sd_notify READY=1` after the first frame; switch the unit to `Type=notify` | `app/` + `systemd/`, [benchmark plan](benchmark-plan.md#making-m2-exact) |
 | F6 | ~~Lint the scripts with shellcheck~~ Done: `tests/lint.sh` is clean. Still open: CI running `tests/lint.sh` and the test scripts on every push | This repo |
 | F7 | Restore memory locking without the Qt crash: lock with `MCL_CURRENT` once startup is done, or lock only the audio engine's buffers; then raise `LimitMEMLOCK` again (D16) | App |
 | F8 | Reduce the Info page's diagnostics to the actionable ones (scoped: a level threshold on the Info sink cuts today's sample from 26 entries to 10) | App |
