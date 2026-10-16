@@ -1,0 +1,11 @@
+<!--
+SPDX-FileCopyrightText: Google - Material Design Icons https://materialdesignicons.com/
+
+SPDX-License-Identifier: Apache-2.0
+-->
+
+<svg xmlns="http://www.w3.org/2000/svg" width="24px" height="24px" viewBox="0 -960 960 960" fill="#FFFFFF">
+  <g transform="rotate(90 480 -480)">
+    <path d="M400-120 160-360l241-241 56 57-144 144h367v-400h80v480H313l144 143-57 57Z"/>
+  </g>
+</svg>

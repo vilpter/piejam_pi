@@ -1,0 +1,9 @@
+# SPDX-FileCopyrightText: 2020-2026 Dimitrij Kotrev
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+module PieJam.Dialogs
+FileSelectDialog 1.0 FileSelectDialog.qml
+OpenFileDialog 1.0 OpenFileDialog.qml
+SaveFileDialog 1.0 SaveFileDialog.qml
+YesNoCancelDialog 1.0 YesNoCancelDialog.qml

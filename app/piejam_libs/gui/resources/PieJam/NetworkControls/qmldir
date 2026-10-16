@@ -1,0 +1,13 @@
+# SPDX-FileCopyrightText: 2020-2026 Dimitrij Kotrev
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+module PieJam.NetworkControls
+NetworkSettings 1.0 NetworkSettings.qml
+WiFiNetworkDelegate 1.0 WiFiNetworkDelegate.qml
+WiFiConnectionDialog 1.0 WiFiConnectionDialog.qml
+NFSServerSettings 1.0 NFSServerSettings.qml
+NFSClientSettings 1.0 NFSClientSettings.qml
+NFSMountDelegate 1.0 NFSMountDelegate.qml
+NFSMountDialog 1.0 NFSMountDialog.qml
+NFSSettings 1.0 NFSSettings.qml

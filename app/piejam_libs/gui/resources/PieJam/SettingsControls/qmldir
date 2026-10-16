@@ -1,0 +1,9 @@
+# SPDX-FileCopyrightText: 2020-2026 Dimitrij Kotrev
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+module PieJam.SettingsControls
+AudioSettings 1.0 AudioSettings.qml
+DisplaySettings 1.0 DisplaySettings.qml
+MidiSettings 1.0 MidiSettings.qml
+SessionSettings 1.0 SessionSettings.qml

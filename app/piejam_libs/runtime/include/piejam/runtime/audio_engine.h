@@ -1,0 +1,68 @@
+// PieJam - An audio mixer for Raspberry Pi.
+// SPDX-FileCopyrightText: 2020-2026  Dimitrij Kotrev
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+#pragma once
+
+#include <piejam/runtime/audio_stream.h>
+#include <piejam/runtime/fwd.h>
+#include <piejam/runtime/fx/ladspa_processor_factory.h>
+
+#include <piejam/audio/fwd.h>
+#include <piejam/audio/pair.h>
+#include <piejam/audio/pcm_buffer_converter.h>
+#include <piejam/audio/types.h>
+#include <piejam/midi/fwd.h>
+#include <piejam/pimpl.h>
+#include <piejam/thread/fwd.h>
+
+#include <chrono>
+#include <memory>
+#include <optional>
+#include <span>
+
+namespace piejam::runtime
+{
+
+class audio_engine
+{
+public:
+    audio_engine(
+        std::span<audio::engine::rt_task_executor> workers,
+        audio::sample_rate,
+        unsigned num_device_input_channels,
+        unsigned num_device_output_channels);
+
+    template <class P>
+    void set_parameter_value(parameter::id_t<P>, parameter::value_type_t<P>)
+        const;
+
+    template <class P>
+    [[nodiscard]]
+    auto get_parameter_update(parameter::id_t<P>) const
+        -> std::optional<parameter::value_type_t<P>>;
+
+    [[nodiscard]]
+    auto get_learned_midi() const -> std::optional<midi::external_event>;
+
+    [[nodiscard]]
+    auto get_stream(audio_stream_id) const -> audio_stream_buffer;
+
+    [[nodiscard]]
+    auto rebuild(
+        state const&,
+        fx::simple_ladspa_processor_factory const&,
+        std::unique_ptr<midi::input_event_handler>) -> bool;
+
+    void init_process(
+        std::span<audio::pcm_input_buffer_converter const>,
+        std::span<audio::pcm_output_buffer_converter const>);
+
+    auto process(std::size_t buffer_size) noexcept -> std::chrono::nanoseconds;
+
+private:
+    struct impl;
+    pimpl<impl> const m_impl;
+};
+
+} // namespace piejam::runtime

@@ -1,0 +1,89 @@
+// PieJam - An audio mixer for Raspberry Pi.
+// SPDX-FileCopyrightText: 2020-2026  Dimitrij Kotrev
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+#include <piejam/gui/model/MixerChannelEdit.h>
+
+#include <piejam/gui/model/AudioRouting.h>
+
+#include <piejam/runtime/actions/mixer_actions.h>
+#include <piejam/runtime/actions/set_string.h>
+#include <piejam/runtime/selectors.h>
+#include <piejam/runtime/ui/thunk_action.h>
+
+#include <piejam/io_direction.h>
+
+namespace piejam::gui::model
+{
+
+MixerChannelEdit::MixerChannelEdit(
+    runtime::state_access const& state_access,
+    runtime::mixer::channel_id const id)
+    : MixerChannel{state_access, id}
+    , m_in{&addModel<AudioRouting>(id, io_direction::input)}
+    , m_out{&addModel<AudioRouting>(id, io_direction::output)}
+{
+}
+
+void
+MixerChannelEdit::onSubscribe()
+{
+    MixerChannel::onSubscribe();
+
+    observe(
+        runtime::selectors::make_mixer_channel_can_move_left_selector(
+            channel_id()),
+        [this](bool const x) { setCanMoveLeft(x); });
+
+    observe(
+        runtime::selectors::make_mixer_channel_can_move_right_selector(
+            channel_id()),
+        [this](bool const x) { setCanMoveRight(x); });
+}
+
+void
+MixerChannelEdit::changeName(QString const& name)
+{
+    runtime::actions::set_string action;
+    action.id = observe_once(
+        runtime::selectors::make_mixer_channel_name_selector(channel_id()));
+    action.str = box{name.toStdString()};
+    dispatch(action);
+}
+
+void
+MixerChannelEdit::changeColor(MaterialColor color)
+{
+    runtime::actions::set_mixer_channel_color action;
+    action.channel_id = channel_id();
+    action.color = static_cast<runtime::material_color>(color);
+    dispatch(action);
+}
+
+void
+MixerChannelEdit::moveLeft()
+{
+    BOOST_ASSERT(canMoveLeft());
+    runtime::actions::move_mixer_channel_left action;
+    action.channel_id = channel_id();
+    dispatch(action);
+}
+
+void
+MixerChannelEdit::moveRight()
+{
+    BOOST_ASSERT(canMoveRight());
+    runtime::actions::move_mixer_channel_right action;
+    action.channel_id = channel_id();
+    dispatch(action);
+}
+
+void
+MixerChannelEdit::deleteChannel()
+{
+    runtime::actions::delete_mixer_channel action;
+    action.mixer_channel_id = channel_id();
+    dispatch(action);
+}
+
+} // namespace piejam::gui::model

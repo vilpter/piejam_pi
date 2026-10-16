@@ -1,0 +1,70 @@
+// PieJam - An audio mixer for Raspberry Pi.
+// SPDX-FileCopyrightText: 2020-2026  Dimitrij Kotrev
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+#pragma once
+
+#include <concepts>
+#include <type_traits>
+
+namespace piejam::numeric
+{
+
+template <std::integral, std::size_t>
+struct intx_io_t;
+
+template <class T>
+struct make_signed : std::make_signed<T>
+{
+};
+
+template <std::integral Integer, std::size_t Bits>
+struct make_signed<intx_io_t<Integer, Bits>>
+{
+    using type = intx_io_t<std::make_signed_t<Integer>, Bits>;
+};
+
+template <class T>
+using make_signed_t = typename make_signed<T>::type;
+
+template <class T>
+struct make_unsigned : std::make_unsigned<T>
+{
+};
+
+template <std::integral Integer, std::size_t Bits>
+struct make_unsigned<intx_io_t<Integer, Bits>>
+{
+    using type = intx_io_t<std::make_unsigned_t<Integer>, Bits>;
+};
+
+template <class T>
+using make_unsigned_t = typename make_unsigned<T>::type;
+
+template <class T>
+struct is_signed : std::is_signed<T>
+{
+};
+
+template <std::integral Integer, std::size_t Bits>
+struct is_signed<intx_io_t<Integer, Bits>> : std::is_signed<Integer>
+{
+};
+
+template <class T>
+constexpr bool is_signed_v = is_signed<T>::value;
+
+template <class T>
+struct is_integral : std::is_integral<T>
+{
+};
+
+template <std::integral Integer, std::size_t Bits>
+struct is_integral<intx_io_t<Integer, Bits>> : std::is_integral<Integer>
+{
+};
+
+template <class T>
+constexpr bool is_integral_v = is_integral<T>::value;
+
+} // namespace piejam::numeric

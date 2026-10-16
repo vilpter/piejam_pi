@@ -1,0 +1,124 @@
+# SPDX-FileCopyrightText: 2020-2026 Dimitrij Kotrev
+#
+# SPDX-License-Identifier: CC0-1.0
+
+add_library(piejam_audio STATIC
+    include/piejam/audio/components/amplifier.h
+    include/piejam/audio/components/identity.h
+    include/piejam/audio/components/pan_balance.h
+    include/piejam/audio/components/remap_channels.h
+    include/piejam/audio/dsp/biquad.h
+    include/piejam/audio/dsp/biquad_filter.h
+    include/piejam/audio/dsp/pan.h
+    include/piejam/audio/dsp/pitch_yin.h
+    include/piejam/audio/engine/component.h
+    include/piejam/audio/engine/dag.h
+    include/piejam/audio/engine/dag_executor.h
+    include/piejam/audio/engine/endpoint_ports.h
+    include/piejam/audio/engine/event.h
+    include/piejam/audio/engine/event_buffer.h
+    include/piejam/audio/engine/event_buffer_memory.h
+    include/piejam/audio/engine/event_converter_processor.h
+    include/piejam/audio/engine/event_identity_processor.h
+    include/piejam/audio/engine/event_port.h
+    include/piejam/audio/engine/fwd.h
+    include/piejam/audio/engine/graph.h
+    include/piejam/audio/engine/graph_algorithms.h
+    include/piejam/audio/engine/graph_endpoint.h
+    include/piejam/audio/engine/graph_generic_algorithms.h
+    include/piejam/audio/engine/graph_node.h
+    include/piejam/audio/engine/graph_to_dag.h
+    include/piejam/audio/engine/identity_processor.h
+    include/piejam/audio/engine/input_processor.h
+    include/piejam/audio/engine/lockstep_events.h
+    include/piejam/audio/engine/mix_processor.h
+    include/piejam/audio/engine/multiply_processor.h
+    include/piejam/audio/engine/named_processor.h
+    include/piejam/audio/engine/output_processor.h
+    include/piejam/audio/engine/pan_balance_processor.h
+    include/piejam/audio/engine/process.h
+    include/piejam/audio/engine/processor.h
+    include/piejam/audio/engine/processor_job.h
+    include/piejam/audio/engine/processor_test_environment.h
+    include/piejam/audio/engine/processor_util.h
+    include/piejam/audio/engine/rt_task_executor.h
+    include/piejam/audio/engine/single_event_input_processor.h
+    include/piejam/audio/engine/smoother_processor.h
+    include/piejam/audio/engine/stream_processor.h
+    include/piejam/audio/engine/stream_ring_buffer.h
+    include/piejam/audio/engine/thread_context.h
+    include/piejam/audio/engine/value_io_processor.h
+    include/piejam/audio/fwd.h
+    include/piejam/audio/io_process.h
+    include/piejam/audio/multichannel_buffer.h
+    include/piejam/audio/multichannel_layout.h
+    include/piejam/audio/multichannel_view.h
+    include/piejam/audio/pair.h
+    include/piejam/audio/pcm_buffer_converter.h
+    include/piejam/audio/pcm_convert.h
+    include/piejam/audio/pcm_format.h
+    include/piejam/audio/pcm_sample_type.h
+    include/piejam/audio/period_size.h
+    include/piejam/audio/pitch.h
+    include/piejam/audio/process_function.h
+    include/piejam/audio/process_thread.h
+    include/piejam/audio/sample_rate.h
+    include/piejam/audio/slice.h
+    include/piejam/audio/slice_algorithms.h
+    include/piejam/audio/sound_card_config.h
+    include/piejam/audio/sound_card_descriptor.h
+    include/piejam/audio/sound_card_manager.h
+    include/piejam/audio/sound_card_hw_params.h
+    include/piejam/audio/types.h
+    src/piejam/audio/alsa/get_set_hw_params.cpp
+    src/piejam/audio/alsa/get_set_hw_params.h
+    src/piejam/audio/alsa/get_sound_cards.cpp
+    src/piejam/audio/alsa/get_sound_cards.h
+    src/piejam/audio/alsa/io_process_config.h
+    src/piejam/audio/alsa/pcm_io.cpp
+    src/piejam/audio/alsa/pcm_io.h
+    src/piejam/audio/alsa/pcm_reader.h
+    src/piejam/audio/alsa/pcm_writer.h
+    src/piejam/audio/alsa/process_step.cpp
+    src/piejam/audio/alsa/process_step.h
+    src/piejam/audio/components/amplifier.cpp
+    src/piejam/audio/components/identity.cpp
+    src/piejam/audio/components/pan_balance.cpp
+    src/piejam/audio/dsp/pitch_yin.cpp
+    src/piejam/audio/engine/dag.cpp
+    src/piejam/audio/engine/export_graph_as_dot.cpp
+    src/piejam/audio/engine/graph.cpp
+    src/piejam/audio/engine/graph_algorithms.cpp
+    src/piejam/audio/engine/graph_to_dag.cpp
+    src/piejam/audio/engine/identity_processor.cpp
+    src/piejam/audio/engine/input_processor.cpp
+    src/piejam/audio/engine/mix_processor.cpp
+    src/piejam/audio/engine/multiply_processor.cpp
+    src/piejam/audio/engine/output_processor.cpp
+    src/piejam/audio/engine/pan_balance_processor.cpp
+    src/piejam/audio/engine/process.cpp
+    src/piejam/audio/engine/processor_job.cpp
+    src/piejam/audio/engine/smoother_processor.cpp
+    src/piejam/audio/engine/stream_processor.cpp
+    src/piejam/audio/io_process.cpp
+    src/piejam/audio/sound_card_manager.cpp
+)
+
+target_include_directories(piejam_audio
+    PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(piejam_audio
+    PUBLIC
+        piejam_algorithm
+        piejam_base
+        piejam_functional
+        piejam_numeric
+        piejam_range
+        piejam_system
+        piejam_thread
+    PRIVATE
+        piejam_compiler_warnings
+        piejam_log
+)
+
+add_subdirectory(benchmarks)
+add_subdirectory(tests)

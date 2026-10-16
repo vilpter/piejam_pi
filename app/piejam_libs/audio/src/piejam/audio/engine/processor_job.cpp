@@ -1,0 +1,145 @@
+// PieJam - An audio mixer for Raspberry Pi.
+// SPDX-FileCopyrightText: 2020-2026  Dimitrij Kotrev
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+#include <piejam/audio/engine/processor_job.h>
+
+#include <piejam/audio/engine/processor.h>
+#include <piejam/audio/engine/thread_context.h>
+#include <piejam/audio/slice.h>
+
+#include <boost/assert.hpp>
+
+#include <algorithm>
+
+namespace piejam::audio::engine
+{
+
+namespace
+{
+
+auto
+empty_result_ref() -> std::reference_wrapper<slice<float> const>
+{
+    static slice<float> res;
+    return std::cref(res);
+}
+
+void
+verify_process_context(
+    [[maybe_unused]] processor const& proc,
+    [[maybe_unused]] process_context const& ctx)
+{
+    BOOST_ASSERT(proc.num_inputs() == ctx.inputs.size());
+    BOOST_ASSERT(proc.num_outputs() == ctx.outputs.size());
+    BOOST_ASSERT(proc.num_outputs() == ctx.results.size());
+    BOOST_ASSERT(proc.event_inputs().size() == ctx.event_inputs.size());
+    BOOST_ASSERT(proc.event_outputs().size() == ctx.event_outputs.size());
+    BOOST_ASSERT(std::ranges::all_of(ctx.inputs, [&](slice<float> const& b) {
+        return b.is_constant() || (b.span().size() == ctx.buffer_size &&
+                                   mipp::isAligned(b.span().data()));
+    }));
+    BOOST_ASSERT(
+        std::ranges::all_of(ctx.outputs, [&](std::span<float> const b) {
+            return b.data() &&
+                   (b.size() == ctx.buffer_size && mipp::isAligned(b.data()));
+        }));
+    BOOST_ASSERT(
+        std::ranges::equal(
+            proc.event_inputs(),
+            ctx.event_inputs,
+            [](event_port const& p, abstract_event_buffer const& b) {
+                return p.type() == b.type();
+            }));
+    BOOST_ASSERT(
+        std::ranges::equal(
+            proc.event_outputs(),
+            ctx.event_outputs,
+            [](event_port const& p, auto const& b) {
+                return p.type() == b->type();
+            }));
+}
+
+} // namespace
+
+processor_job::processor_job(processor& proc)
+    : m_proc(proc)
+    , m_output_buffers(m_proc.num_outputs(), output_buffer_t{})
+    , m_inputs(m_proc.num_inputs(), empty_result_ref())
+    , m_outputs(m_output_buffers.begin(), m_output_buffers.end())
+    , m_results(m_proc.num_outputs())
+    , m_process_context(
+          {m_inputs, m_outputs, m_results, m_event_inputs, m_event_outputs})
+{
+    BOOST_ASSERT((std::ranges::all_of(m_output_buffers, [](auto const& b) {
+        return mipp::isAligned(b.data());
+    })));
+    for (event_port const& port : m_proc.event_inputs())
+    {
+        m_event_inputs.add(port);
+    }
+    BOOST_ASSERT(m_proc.event_inputs().size() == m_event_inputs.size());
+    for (event_port const& port : m_proc.event_outputs())
+    {
+        m_event_outputs.add(port);
+    }
+    BOOST_ASSERT(m_proc.event_outputs().size() == m_event_outputs.size());
+}
+
+auto
+processor_job::result_ref(std::size_t const index) const -> slice<float> const&
+{
+    return m_results[index];
+}
+
+auto
+processor_job::event_result_ref(std::size_t const index)
+    -> abstract_event_buffer const&
+{
+    return m_event_outputs.get(index);
+}
+
+void
+processor_job::connect_result(std::size_t const index, slice<float> const& res)
+{
+    BOOST_ASSERT(index < m_inputs.size());
+    m_inputs[index] = std::ref(res);
+}
+
+void
+processor_job::connect_event_result(
+    std::size_t const index,
+    abstract_event_buffer const& ev_buf)
+{
+    m_event_inputs.set(index, ev_buf);
+}
+
+void
+processor_job::clear_event_output_buffers()
+{
+    m_event_outputs.clear_buffers();
+}
+
+void
+processor_job::operator()(thread_context const& ctx)
+{
+    // set output buffer sizes
+    auto const buffer_size = ctx.buffer_size;
+    if (m_process_context.buffer_size != buffer_size)
+    {
+        for (std::span<float>& out : m_outputs)
+        {
+            out = {out.data(), buffer_size};
+        }
+
+        m_process_context.buffer_size = buffer_size;
+    }
+
+    BOOST_ASSERT(ctx.event_memory);
+    m_event_outputs.set_event_memory(ctx.event_memory);
+
+    verify_process_context(m_proc, m_process_context);
+    m_proc.process(m_process_context);
+}
+
+} // namespace piejam::audio::engine

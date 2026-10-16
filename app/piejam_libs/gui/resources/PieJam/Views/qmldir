@@ -1,0 +1,6 @@
+# SPDX-FileCopyrightText: 2020-2026 Dimitrij Kotrev
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+module PieJam.Views
+RootView 1.0 RootView.qml

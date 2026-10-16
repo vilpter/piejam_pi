@@ -1,0 +1,355 @@
+// PieJam - An audio mixer for Raspberry Pi.
+// SPDX-FileCopyrightText: 2020-2026  Dimitrij Kotrev
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+#include <piejam/runtime/persistence/session.h>
+
+#include <piejam/runtime/parameter/assignment.h>
+#include <piejam/runtime/persistence/fx_internal_id.h>
+#include <piejam/runtime/persistence/optional.h>
+#include <piejam/runtime/persistence/variant.h>
+
+#include <nlohmann/json.hpp>
+
+#include <boost/assert.hpp>
+#include <boost/hof/match.hpp>
+
+namespace piejam::audio
+{
+
+NLOHMANN_JSON_SERIALIZE_ENUM(
+    bus_type,
+    {{bus_type::mono, "mono"}, {bus_type::stereo, "stereo"}})
+
+template <class T>
+void
+to_json(nlohmann::json& j, pair<T> const& p)
+{
+    j = nlohmann::json{{"left", p.left}, {"right", p.right}};
+}
+
+template <class T>
+void
+from_json(nlohmann::json const& j, pair<T>& p)
+{
+    j.at("left").get_to(p.left);
+    j.at("right").get_to(p.right);
+}
+
+} // namespace piejam::audio
+
+namespace piejam::runtime
+{
+
+NLOHMANN_JSON_SERIALIZE_ENUM(
+    midi_assignment::type,
+    {{midi_assignment::type::cc, "cc"},
+     {midi_assignment::type::pitch_bend, "pitch_bend"}})
+
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(
+    midi_assignment,
+    channel,
+    control_type,
+    control_id);
+
+NLOHMANN_JSON_SERIALIZE_ENUM(
+    material_color,
+    {
+        {material_color::amber, "amber"},
+        {material_color::blue, "blue"},
+        {material_color::blue_grey, "blue_grey"},
+        {material_color::brown, "brown"},
+        {material_color::cyan, "cyan"},
+        {material_color::deep_orange, "deep_orange"},
+        {material_color::deep_purple, "deep_purple"},
+        {material_color::green, "green"},
+        {material_color::grey, "grey"},
+        {material_color::indigo, "indigo"},
+        {material_color::light_blue, "light_blue"},
+        {material_color::light_green, "light_green"},
+        {material_color::lime, "lime"},
+        {material_color::orange, "orange"},
+        {material_color::pink, "pink"},
+        {material_color::red, "red"},
+        {material_color::teal, "teal"},
+        {material_color::yellow, "yellow"},
+    });
+
+namespace mixer
+{
+
+NLOHMANN_JSON_SERIALIZE_ENUM(
+    channel_type,
+    {
+        {channel_type::mono, "mono"},
+        {channel_type::stereo, "stereo"},
+        {channel_type::aux, "aux"},
+    })
+
+} // namespace mixer
+
+namespace parameter
+{
+
+template <class Value>
+void
+to_json(nlohmann::json& j, assignment<Value> const& p)
+{
+    j = {{"key", p.key}, {"value", p.value}};
+}
+
+template <class Value>
+void
+from_json(nlohmann::json const& j, assignment<Value>& p)
+{
+    j.at("key").get_to(p.key);
+    j.at("value").get_to(p.value);
+}
+
+template <class Parameter>
+void
+to_json(nlohmann::json& j, tagged_value<Parameter> const& v)
+{
+    j = v.value;
+}
+
+template <class Parameter>
+void
+from_json(nlohmann::json const& j, tagged_value<Parameter>& v)
+{
+    j.get_to(v.value);
+}
+
+static auto const parameter_value_assignment_serializer =
+    persistence::variant_serializer{
+        persistence::variant_option<tagged_value<float_parameter>>{"float"},
+        persistence::variant_option<tagged_value<int_parameter>>{"int"},
+        persistence::variant_option<tagged_value<bool_parameter>>{"bool"},
+        persistence::variant_option<tagged_value<enum_parameter>>{"enum"},
+    };
+
+void
+to_json(nlohmann::json& j, parameter_value_assignment const& p)
+{
+    j = {
+        {"key", p.key},
+        {"value", parameter_value_assignment_serializer.to_json(p.value)}};
+}
+
+void
+from_json(nlohmann::json const& j, parameter_value_assignment& p)
+{
+    j.at("key").get_to(p.key);
+    parameter_value_assignment_serializer.from_json(j.at("value"), p.value);
+}
+
+} // namespace parameter
+
+namespace persistence
+{
+
+static auto const s_key_version = "version";
+static auto const s_key_session = "session";
+
+static auto
+get_version(nlohmann::json const& json_ses) -> unsigned
+{
+    return json_ses.at(s_key_version).get<unsigned>();
+}
+
+static auto const assigned_channels_serializer = variant_serializer{
+    variant_option<std::size_t>{"mono"},
+    variant_option<audio::pair<std::size_t>>{"stereo"}};
+
+void
+to_json(nlohmann::json& j, session::external_audio_device_config const& p)
+{
+    j = nlohmann::json{
+        {"name", p.name},
+        {"bus_type", p.bus_type},
+        {"assigned_channels",
+         assigned_channels_serializer.to_json(p.assigned_channels)},
+    };
+}
+
+void
+from_json(nlohmann::json const& j, session::external_audio_device_config& p)
+{
+    j.at("name").get_to(p.name);
+    j.at("bus_type").get_to(p.bus_type);
+    assigned_channels_serializer.from_json(
+        j.at("assigned_channels"),
+        p.assigned_channels);
+}
+
+static auto const s_key_internal = "internal";
+static auto const s_key_ladspa = "ladspa";
+
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(session::internal_fx, type, preset, midi);
+
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(
+    session::ladspa_plugin,
+    id,
+    name,
+    preset,
+    midi);
+
+void
+to_json(nlohmann::json& j, session::fx_plugin const& fx_plug)
+{
+    std::visit(
+        boost::hof::match(
+            [&j](session::internal_fx const& fx) {
+                j = {{s_key_internal, fx}};
+            },
+            [&j](session::ladspa_plugin const& ladspa_plug) {
+                j = {{s_key_ladspa, ladspa_plug}};
+            },
+            [](std::monostate) { BOOST_ASSERT(false); }),
+        fx_plug.as_variant());
+
+    j["active"] = fx_plug.active;
+}
+
+void
+from_json(nlohmann::json const& j, session::fx_plugin& fx_plug)
+{
+    if (j.contains(s_key_internal))
+    {
+        session::internal_fx fx;
+        j[s_key_internal].get_to(fx);
+        fx_plug = fx;
+    }
+    else if (j.contains(s_key_ladspa))
+    {
+        session::ladspa_plugin ladspa_plug;
+        j[s_key_ladspa].get_to(ladspa_plug);
+        fx_plug = ladspa_plug;
+    }
+    else
+    {
+        throw std::runtime_error("unknown fx_plugin_id");
+    }
+
+    j["active"].get_to(fx_plug.active);
+}
+
+NLOHMANN_JSON_SERIALIZE_ENUM(
+    session::mixer_io_type,
+    {{session::mixer_io_type::none, "none"},
+     {session::mixer_io_type::mix, "mix"},
+     {session::mixer_io_type::device, "device"},
+     {session::mixer_io_type::channel, "channel"}})
+
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(session::mixer_io, type, index);
+
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(
+    session::mixer_aux_send,
+    channel_index,
+    parameter,
+    midi);
+
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(
+    session::mixer_channel,
+    name,
+    color,
+    channel_type,
+    parameter,
+    midi,
+    fx_chain,
+    in,
+    out,
+    aux_sends);
+
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(
+    session::aux_channel,
+    channel_index,
+    parameter);
+
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(
+    session,
+    external_audio_input_devices,
+    external_audio_output_devices,
+    main_mixer_channel,
+    mixer_channels,
+    aux_channels);
+
+using upgrade_function = void (*)(nlohmann::json&);
+using upgrade_functions_array =
+    std::array<upgrade_function, current_session_version>;
+
+template <size_t Version>
+static void upgrade(nlohmann::json&);
+
+template <size_t... I>
+static auto
+make_upgrade_functions_array(std::index_sequence<I...>)
+    -> upgrade_functions_array
+{
+    return upgrade_functions_array{{upgrade<I>...}};
+}
+
+static auto
+make_upgrade_functions_array() -> upgrade_functions_array
+{
+    return make_upgrade_functions_array(
+        std::make_index_sequence<current_session_version>());
+}
+
+static void
+upgrade_session(nlohmann::json& json_ses)
+{
+    static auto const upgrade_functions = make_upgrade_functions_array();
+
+    auto file_version = get_version(json_ses);
+    while (file_version < current_session_version)
+    {
+        upgrade_functions[file_version](json_ses);
+
+        auto const prev_version = file_version;
+        file_version = get_version(json_ses);
+
+        BOOST_ASSERT(file_version > prev_version);
+        if (file_version <= prev_version)
+        {
+            throw std::runtime_error("cannot upgrade session file");
+        }
+    }
+}
+
+auto
+load_session(std::istream& in) -> session
+{
+    auto json_ses = nlohmann::json::parse(in);
+
+    auto const file_version = get_version(json_ses);
+
+    if (file_version > current_session_version)
+    {
+        throw std::runtime_error("session version is too new");
+    }
+
+    if (file_version < current_session_version)
+    {
+        upgrade_session(json_ses);
+    }
+
+    BOOST_ASSERT(current_session_version == get_version(json_ses));
+
+    session ses;
+    json_ses.at(s_key_session).get_to(ses);
+    return ses;
+}
+
+void
+save_session(std::ostream& out, session const& ses)
+{
+    nlohmann::json json_ses = {
+        {s_key_version, current_session_version},
+        {s_key_session, ses}};
+    out << json_ses.dump(4) << std::endl;
+}
+
+} // namespace persistence
+
+} // namespace piejam::runtime
