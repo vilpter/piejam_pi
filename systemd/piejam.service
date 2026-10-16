@@ -34,9 +34,17 @@ RestartSec=2
 # 143 = stopped by SIGTERM, i.e. "systemctl stop piejam". Not a failure.
 SuccessExitStatus=143
 
-# Real-time audio threads and memory locking (upstream's "add memory locking").
-LimitRTPRIO=95
-LimitMEMLOCK=infinity
+# Real-time audio threads. PieJam picks its own SCHED_FIFO priorities (96 for
+# audio, 80 for MIDI) and aborts if it can't get them, so allow the full range
+# rather than tracking the app's numbers here.
+LimitRTPRIO=99
+# Memory locking must stay limited. PieJam calls mlockall(MCL_CURRENT |
+# MCL_FUTURE) at startup; if that succeeds, Debian's Qt 5 crashes building
+# the QML engine (it madvise()s new heap reservations, which the kernel
+# refuses on locked memory). With a finite limit the call fails cleanly and
+# PieJam logs "could not lock memory" and runs unlocked. 8M is systemd's
+# default, set here so a changed default can't bring the crash back.
+LimitMEMLOCK=8M
 
 [Install]
 WantedBy=multi-user.target

@@ -105,11 +105,19 @@ Measurement method: [benchmark-plan.md](benchmark-plan.md).
 ## Runtime user
 
 The app runs as a dedicated `piejam` system user (not root), in the groups `audio`,
-`video`, `render` and `input`. `piejam.service` grants real-time scheduling
-(`LimitRTPRIO=95`) and unlimited memory locking (`LimitMEMLOCK=infinity`), which the
-app needs to lock its memory (upstream's `system: add memory locking`) and avoid page
-faults on the audio thread. The same limits are set in `/etc/security/limits.d/` for
-running the app by hand in a login session. That file doesn't apply to systemd services.
+`video`, `render` and `input`. `piejam.service` grants real-time scheduling up to
+the maximum priority (`LimitRTPRIO=99`). The app runs its audio threads at
+`SCHED_FIFO` priority 96 and its MIDI thread at 80, and aborts at startup if it can't
+get them. The same priority limit is set in `/etc/security/limits.d/` for running the
+app by hand in a login session. That file doesn't apply to systemd services.
+
+Memory locking is deliberately **not** granted (`LimitMEMLOCK=8M`). Upstream added
+`mlockall(MCL_CURRENT | MCL_FUTURE)` to avoid page faults on the audio thread, but
+with Debian's Qt 5 a successful `MCL_FUTURE` lock crashes the app: Qt's QML engine
+calls `madvise(MADV_DONTNEED)` on each new heap reservation, the kernel refuses that
+on locked memory, and Qt aborts on the error. With a finite limit the call fails, and
+PieJam logs "could not lock memory" and runs unlocked. Restoring locking needs an app
+change (follow-up F7 in the [decision log](decision-log.md)).
 
 The app keeps its data under `/home/piejam`: settings in `~/.config/`, sessions in
 `~/sessions/`, and recordings in `~/recordings/`. It's all on the NVMe root

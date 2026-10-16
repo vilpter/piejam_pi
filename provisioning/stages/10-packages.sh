@@ -5,10 +5,14 @@ set -euo pipefail
 source "$(dirname "$0")/../lib.sh"
 require_root
 
-# Runtime: the QML modules PieJam imports, the LADSPA plugin sets PieJam OS
+# Runtime: the QML modules PieJam imports, the virtual keyboard's input
+# method plugin (PieJam sets QT_IM_MODULE=qtvirtualkeyboard; without the
+# plugin the keyboard never appears), the LADSPA plugin sets PieJam OS
 # shipped (PieJam scans /usr/lib/ladspa at startup), and polkit so the
-# unprivileged app user can power off the device.
+# unprivileged app user can power off the device. Recommends are skipped,
+# so every runtime piece is listed explicitly.
 runtime_packages=(
+    qml-module-qtqml
     qml-module-qtquick2
     qml-module-qtquick-controls2
     qml-module-qtquick-templates2
@@ -16,6 +20,8 @@ runtime_packages=(
     qml-module-qtquick-window2
     qml-module-qtqml-models2
     qml-module-qtquick-virtualkeyboard
+    qml-module-qt-labs-folderlistmodel    # imported by the keyboard's own QML
+    qtvirtualkeyboard-plugin
     qml-module-qtgraphicaleffects
     caps
     tap-plugins
@@ -32,7 +38,7 @@ build_packages=(
     qtbase5-dev
     qtdeclarative5-dev
     qtquickcontrols2-5-dev
-    qtvirtualkeyboard5-dev
+    libqt5virtualkeyboard5-dev
     libqt5svg5-dev
     libboost-dev
     libspdlog-dev
