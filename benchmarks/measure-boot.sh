@@ -24,12 +24,42 @@ secs() {
     awk -v us="${1:-0}" 'BEGIN { if (us > 0) printf "%.2f", us / 1e6; else printf "n/a" }'
 }
 
-# First journal line of piejam.service matching a pattern, as seconds.
+# Last journal line of piejam.service matching a pattern, in the given output
+# format (short-monotonic or short-unix); prints its leading timestamp. The
+# last match belongs to the app's latest start, like the other milestones.
+journal_stamp() {
+    journalctl -b -u piejam.service -o "$2" --no-pager 2>/dev/null |
+        grep -E "$1" | tail -n 1 |
+        sed -nE 's/^\[? *([0-9]+\.[0-9]+)\]? .*/\1/p' || true
+}
+
+# The same, as seconds since kernel start.
 journal_secs() {
-    journalctl -b -u piejam.service -o short-monotonic --no-pager 2>/dev/null |
-        grep -m1 -E "$1" |
-        sed -nE 's/^\[ *([0-9]+\.[0-9]+)\].*/\1/p' |
-        awk '{ printf "%.2f", $1 }' || true
+    journal_stamp "$1" short-monotonic | awk '{ printf "%.2f", $1 }'
+}
+
+# Interim "UI visible" marker: Qt logs its GL setup (QSG_INFO=1) while
+# preparing the first frame. PieJam routes Qt's messages to its own log file,
+# not the journal, with wall-clock timestamps, and flushes it every 5 s.
+# The marker is placed on the monotonic clock relative to the launcher's
+# "using" journal line, which is logged just before the app starts, so a
+# clock change earlier in boot doesn't skew it. Replace with sd_notify from
+# the app later (benchmark plan, "Making M2 exact").
+ui_visible_secs() {
+    local log wall ui_unix anchor_mono anchor_unix i
+    log=$(getent passwd piejam | cut -d: -f6)/piejam.log
+    [[ -r $log ]] || { echo "unreadable" ; return; }
+    for (( i = 0; i < 12; i++ )); do
+        wall=$(sed -nE '/GL_RENDERER/{s/^\[([0-9-]+ [0-9:.]+)\].*/\1/p;q}' "$log")
+        [[ -n $wall ]] && break
+        sleep 1
+    done
+    [[ -n $wall ]] && ui_unix=$(date -d "$wall" +%s.%N 2>/dev/null) || return 0
+    anchor_mono=$(journal_stamp 'piejam-launch: using' short-monotonic)
+    anchor_unix=$(journal_stamp 'piejam-launch: using' short-unix)
+    [[ -n $ui_unix && -n $anchor_mono && -n $anchor_unix ]] || return 0
+    awk -v mono="$anchor_mono" -v unix="$anchor_unix" -v ui="$ui_unix" \
+        'BEGIN { printf "%.2f", mono + (ui - unix) }'
 }
 
 # Wait for boot to finish so systemd has final numbers.
@@ -40,13 +70,19 @@ boot_finished=$(secs "$(prop FinishTimestampMonotonic)")
 piejam_start=$(secs "$(prop piejam.service ExecMainStartTimestampMonotonic)")
 restarts=$(prop piejam.service NRestarts)
 display_found=$(journal_secs 'piejam-launch: using')
-# Interim "UI visible" marker: Qt logs its GL setup (QSG_INFO=1) while
-# preparing the first frame. Replace with sd_notify from the app later.
-ui_visible=$(journal_secs 'GL_RENDERER|qt\.scenegraph')
+ui_visible=$(ui_visible_secs)
+ui_note="approximate; QSG_INFO marker"
+if [[ $ui_visible == unreadable ]]; then
+    ui_visible=
+    ui_note="PieJam's log is only readable as root; run with sudo"
+fi
 audio_ready=$(secs "$(prop piejam-audio-ready.service ActiveEnterTimestampMonotonic)")
 
 chain=$(systemd-analyze critical-chain piejam.service --no-pager 2>&1 || true)
-if grep -qiE 'network|NetworkManager' <<< "$chain"; then
+# Units that wait for or bring up the network. Match unit names, not the bare
+# word: cloud-init-network.service is on the chain but doesn't wait for one.
+network_units_re='(network(-online|-pre)?\.target|NetworkManager[^ ]*\.service|systemd-networkd[^ ]*\.service|[^ ]*wait-online[^ ]*\.service)'
+if grep -qE "$network_units_re" <<< "$chain"; then
     network_in_chain=yes
 else
     network_in_chain=no
@@ -64,7 +100,7 @@ report=$results/boot-$stamp-$label.txt
     echo "userspace start:  $userspace_start"
     echo "piejam started:   $piejam_start   (restarts: $restarts)"
     echo "display found:    ${display_found:-n/a}"
-    echo "UI visible:       ${ui_visible:-n/a}   (approximate; QSG_INFO marker)"
+    echo "UI visible:       ${ui_visible:-n/a}   ($ui_note)"
     echo "audio ready:      $audio_ready"
     echo "boot finished:    $boot_finished"
     echo "network in chain: $network_in_chain"
