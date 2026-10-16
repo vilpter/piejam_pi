@@ -10,14 +10,15 @@ but it deliberately does **not** build a custom OS image. It provisions a stock
 keeps normal `apt` package management and stays maintainable.
 See [ADR 0001](docs/adr/0001-pi-os-lite-not-buildroot.md).
 
-> **Status:** scaffolding, not yet run on hardware. Everything that depends on the
-> real Pi is tracked as an assumption in the [decision log](docs/decision-log.md).
+> **Status:** provisioned and booted on a Pi 5 (2026-10-15): the mixer is on the panel
+> 5.3 s after kernel start. Audio through the Scarlett isn't validated yet; open items
+> are tracked in the [decision log](docs/decision-log.md).
 
 ## Target hardware
 
 | Component | Model |
 |---|---|
-| Board | Raspberry Pi 5, 8 GB |
+| Board | Raspberry Pi 5, 4 GB |
 | Storage | NVMe SSD on an M.2 HAT (boot device) |
 | Display | Official Raspberry Pi 7″ touchscreen, **legacy Gen 1** (800×480 DSI, FT5406 touch) |
 | Audio | Focusrite Scarlett 2i2 (USB Audio Class) |

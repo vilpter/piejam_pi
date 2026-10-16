@@ -16,7 +16,7 @@ default chosen to avoid blocking; revisit freely) · **Open** (needs an answer).
 | D4 | 2026-09-30 | Move the fork's network backend onto NetworkManager (`nmcli`) and systemd | Decided | [ADR 0004](adr/0004-network-backend-nmcli.md) |
 | D5 | 2026-09-30 | When they conflict: maintainability first, then boot speed | Decided | — |
 | D6 | 2026-09-30 | Tooling repository is `vilpter/piejam_pi` (created by the owner) | Decided | — |
-| D7 | 2026-09-30 | Target hardware: Pi 5 8 GB, NVMe HAT, legacy Gen 1 7″ DSI touchscreen, Scarlett 2i2 | Decided | — |
+| D7 | 2026-09-30 | Target hardware: Pi 5, NVMe HAT, legacy Gen 1 7″ DSI touchscreen, Scarlett 2i2. The unit is a Pi 5 **4 GB** (revision `c04170`), confirmed by the owner as the intended board; the app uses about 150 MB | Decided | — |
 | D8 | 2026-09-30 | The network (including SSH) is never a boot dependency | Decided | [ADR 0005](adr/0005-network-not-boot-dependency.md) |
 | D9 | 2026-09-30 | Tooling repo is MIT-licensed; the app stays GPL-3.0 | Default | — |
 | D10 | 2026-09-30 | Target Raspberry Pi OS based on Debian 13 "trixie". PieJam sets `CMAKE_CXX_STANDARD 26`, which needs GCC 14; bookworm has GCC 12 | Default | [ADR 0001](adr/0001-pi-os-lite-not-buildroot.md) |
@@ -25,24 +25,25 @@ default chosen to avoid blocking; revisit freely) · **Open** (needs an answer).
 | D13 | 2026-09-30 | Pick the display at each boot with a launcher ported from PieJam OS, not a static KMS config | Default | [ADR 0002](adr/0002-drm-kms-qt-eglfs.md) |
 | D14 | 2026-09-30 | Quitting from the UI powers the Pi off (PieJam OS behavior); `systemctl stop piejam` doesn't | Default | [architecture](architecture.md#power-and-recovery) |
 | D15 | 2026-09-30 | Rely on Pi OS's `display_auto_detect=1` for the Gen 1 panel (as PieJam OS's Pi 5 image did) rather than an explicit overlay | Default | — |
+| D16 | 2026-10-15 | `piejam.service` allows real-time priority up to 99 but keeps memory locking limited (8 MB): PieJam's `mlockall(MCL_FUTURE)` crashes Debian's Qt 5 QML engine if it succeeds | Default | [architecture](architecture.md#runtime-user) |
 
 ## Assumptions
 
-Working assumptions, not facts. Each needs checking on the hardware.
+Working assumptions, checked on the hardware as it becomes possible.
 
-| # | Assumption | How we'll check |
+| # | Assumption | Result (2026-10-15), or how we'll check |
 |---|---|---|
-| A1 | The fork builds on trixie with GCC 14 and Qt 5.15 from `apt`, including with `-Werror` | Run stage `50-app`; `PIEJAM_CMAKE_ARGS` offers an escape hatch |
-| A2 | `display_auto_detect=1` brings up the legacy Gen 1 panel on the Pi 5 | Boot and see output on the panel |
-| A3 | Qt `eglfs_kms` works on the Pi 5 without a compositor, and names connectors `DSI1`/`HDMI1` in its KMS config | Launch the app; if needed, list Qt's names with `QT_LOGGING_RULES=qt.qpa.*=true` |
-| A4 | Touch lines up without a coordinate transform (rotation is an app setting applied in QML) | Tap test |
-| A5 | The Scarlett 2i2 needs no quirk flags on the trixie kernel | `cat /proc/asound/cards` and a playback test |
-| A6 | 8–15 s is reachable without a custom kernel or initramfs | [Benchmark plan](benchmark-plan.md) |
-| A7 | PieJam picks up the Scarlett when it's plugged in after the app has started | Phase 1 checklist. If not, add a bounded wait in the launcher |
-| A8 | The `QSG_INFO` log line lands within a frame or two of the first visible frame | Compare with the external video |
-| A9 | The package names in stage `10-packages` are right for trixie (notably `qtvirtualkeyboard5-dev`, `qtquickcontrols2-5-dev`, `caps`, `tap-plugins`) | First provisioning run |
-| A10 | udev can set the Scarlett's ALSA card id (`ATTR{id}="Scarlett"`) | `cat /proc/asound/cards` |
-| A11 | The KMS panel driver turns the backlight on by itself (PieJam OS's init script set `bl_power` explicitly) | Boot and look at the panel |
+| A1 | The fork builds on trixie with GCC 14 and Qt 5.15 from `apt`, including with `-Werror` | **Holds** (2026-10-15): clean build in 8 min on the Pi 5, no warnings |
+| A2 | `display_auto_detect=1` brings up the legacy Gen 1 panel on the Pi 5 | **Holds**: the panel comes up on RP1's DSI controller (`drm-rp1-dsi`) |
+| A3 | Qt `eglfs_kms` works on the Pi 5 without a compositor, and names connectors `DSI1`/`HDMI1` in its KMS config | **Holds**: PieJam renders through Mesa (V3D, OpenGL ES 3.1) to the panel. The DSI card was `card1` on one boot and `card0` on the next, so the per-boot lookup (D13) is needed |
+| A4 | Touch lines up without a coordinate transform (rotation is an app setting applied in QML) | Looks right: the owner navigated the UI by touch. A formal tap test is still open |
+| A5 | The Scarlett 2i2 needs no quirk flags on the trixie kernel | Not tested yet (no interface connected) |
+| A6 | 8–15 s is reachable without a custom kernel or initramfs | Promising: UI visible 5.3 s after kernel start (firmware time not yet measured) |
+| A7 | PieJam picks up the Scarlett when it's plugged in after the app has started | Not tested yet |
+| A8 | The `QSG_INFO` log line lands within a frame or two of the first visible frame | Not tested yet (needs the external video) |
+| A9 | The package names in stage `10-packages` are right for trixie (notably `qtvirtualkeyboard5-dev`, `qtquickcontrols2-5-dev`, `caps`, `tap-plugins`) | **Failed, fixed**: the dev package is `libqt5virtualkeyboard5-dev`; three runtime packages were missing |
+| A10 | udev can set the Scarlett's ALSA card id (`ATTR{id}="Scarlett"`) | Not tested yet |
+| A11 | The KMS panel driver turns the backlight on by itself (PieJam OS's init script set `bl_power` explicitly) | **Holds**: `bl_power=0`, brightness 255 at boot |
 
 ## Open questions
 
@@ -71,6 +72,37 @@ Resolved:
 | F4 | Rework the network backend onto `nmcli`/systemd with `QProcess` argument lists; start NFS on demand, never enable it at boot. Add NFS packages and narrow privilege rules at the same time | `vilpter/piejam` + this repo, [ADR 0004](adr/0004-network-backend-nmcli.md) |
 | F5 | Emit `sd_notify READY=1` after the first frame; switch the unit to `Type=notify` | `vilpter/piejam` + this repo, [benchmark plan](benchmark-plan.md#making-m2-exact) |
 | F6 | ~~Lint the scripts with shellcheck~~ Done: `tests/lint.sh` is clean. Still open: CI running `tests/lint.sh` and the test scripts on every push | This repo |
+| F7 | Restore memory locking without the Qt crash: lock with `MCL_CURRENT` once startup is done, or lock only the audio engine's buffers; then raise `LimitMEMLOCK` again (D16) | App |
+| F8 | Reduce the Info page's diagnostics to the actionable ones (scoped: a level threshold on the Info sink cuts today's sample from 26 entries to 10) | App |
+| F9 | PieJam drives one sound card. Four inputs need one interface with four or more inputs (Scarlett 4i4/8i6/18i8); two 2i2s can't be combined (separate clocks) without a substantial app change. Owner to decide | — |
+| F10 | Phase 2 candidates seen on hardware: cloud-init sits before `sysinit.target` (about 0.6 s per boot, 3.5 s on the first), and the boot partition's `fsck` adds about 0.6 s | [Benchmark plan](benchmark-plan.md) |
+
+## Findings: first hardware run
+
+Recorded 2026-10-15 on a Pi 5 4 GB booting Raspberry Pi OS Lite (trixie, image
+2026-10-06, kernel 6.18) from NVMe, following the README from a fresh image.
+
+- **Raspberry Pi Imager configures the image through cloud-init.** `cmdline.txt` carries
+  `ds=nocloud;i=…`, WiFi arrives as a netplan-generated NetworkManager profile, and the
+  user gets ordinary password-protected `sudo`.
+- **The EEPROM already tried NVMe first** (`BOOT_ORDER=0xf146`); any order with NVMe
+  (`6`) last is fine.
+- **Three stage 10 gaps:** a renamed dev package and three runtime packages that a
+  `--no-install-recommends` install leaves out (A9). Without
+  `qml-module-qt-labs-folderlistmodel` the app's main view fails to load, because the
+  virtual keyboard imports it.
+- **Two startup crashes**, both from the service's limits: the audio threads want
+  priority 96, and a successful `mlockall(MCL_FUTURE)` makes Debian's Qt 5 abort
+  (D16, F7).
+- **`measure-boot.sh` needed two fixes:** Qt's messages go to PieJam's own log, not the
+  journal, and `cloud-init-network.service` tripped the network check.
+- **Boot:** kernel 1.9 s, userspace 5.7 s. PieJam starts 4.6 s after kernel start and
+  shows its UI at 5.3 s.
+- **Recovery behaviour:** killing the app restarts it in 2 s (it exits 1 on SIGTERM),
+  and `getty@tty1` stays off.
+- **Not on this branch's account:** upstream's `intx_io.float_to_unsigned` test fails on
+  aarch64 (also on unmodified master), and upstream code doesn't compile with GCC 15
+  (`pitch_yin.cpp`). Neither affects trixie's GCC 14 build.
 
 ## Findings: the existing fork
 

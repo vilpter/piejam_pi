@@ -8,7 +8,8 @@ sudo ./provisioning/provision.sh            # all stages, in order
 sudo ./provisioning/provision.sh 50-app     # one stage
 ```
 
-Every stage is idempotent, so it's safe to re-run after pulling changes.
+Every stage is idempotent, so it's safe to re-run after pulling changes. A first run
+takes about 15 minutes on a Pi 5, most of it the app build.
 Files the scripts modify in `/boot/firmware` are backed up once as `*.piejam-orig`.
 `cmdline.txt` is only edited if it contains a `root=` parameter, and it's replaced
 through a temporary file, so a failed or interrupted run can't leave it unbootable.
@@ -17,10 +18,12 @@ Any failed edit stops provisioning with an error.
 ## Prerequisites
 
 1. Flash Raspberry Pi OS Lite (64-bit) to the NVMe drive with Raspberry Pi Imager,
-   and enable SSH and a user account in its settings.
-2. Make sure the Pi 5 bootloader tries NVMe first. With `sudo rpi-eeprom-config --edit`,
-   set `BOOT_ORDER=0xf416` (NVMe, then SD, then USB). Non-HAT+ NVMe adapters may also
-   need `PCIE_PROBE=1`.
+   and enable SSH and a user account in its settings. Imager applies these through
+   cloud-init on first boot, and the account's `sudo` asks for its password.
+2. Make sure the Pi 5 bootloader tries NVMe first: check `sudo rpi-eeprom-config`.
+   `BOOT_ORDER` is read from the right, and `6` is NVMe, so `0xf416` (NVMe, SD, USB)
+   and `0xf146` (NVMe, USB, SD) both work. Change it with `sudo rpi-eeprom-config --edit`.
+   Non-HAT+ NVMe adapters may also need `PCIE_PROBE=1`.
 3. Connect the touchscreen and the Scarlett 2i2.
 
 ## Stages

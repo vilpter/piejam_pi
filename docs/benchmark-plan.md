@@ -77,15 +77,16 @@ during boot.
 The baseline is accepted when all of these hold on five cold boots in a row:
 
 - [ ] The PieJam UI appears on the 7″ panel with no login prompt, console text or cursor.
+      _UI and no getty confirmed 2026-10-15; console text and cursor not yet checked by eye._
 - [ ] Touch input lands where tapped.
 - [ ] The Scarlett 2i2 shows up in PieJam, and audio passes input → mixer → output.
 - [ ] The UI comes up with the Scarlett unplugged, and PieJam picks the Scarlett up
       when it's plugged in afterwards (assumption A7 in the [decision log](decision-log.md)).
 - [ ] The UI comes up with no network, and SSH works when a network is present.
-- [ ] `measure-boot.sh` shows no network unit on the critical chain.
+- [x] `measure-boot.sh` shows no network unit on the critical chain.
 - [ ] Shutdown from the PieJam UI powers the Pi off cleanly.
 - [ ] `sudo systemctl stop piejam` frees the display and does **not** power off.
-- [ ] Killing the app (`sudo pkill piejam_app`) brings it back within a few seconds.
+- [x] Killing the app (`sudo pkill piejam_app`) brings it back within a few seconds.
 
 Record the baseline numbers in the results table below. No time target is enforced
 in Phase 1.
@@ -99,6 +100,8 @@ it helps and doesn't cost reliability or maintainability.
 |---|---|---|
 | Drop services `blame` shows as slow and unneeded (candidates: `bluetooth`/`hciuart` if unused, `triggerhappy`, `keyboard-setup`, `e2scrub_reap`) | Shorter userspace | Low; check each is truly unused |
 | Move `apt-daily`, `apt-daily-upgrade` and `man-db` timers away from boot | No background I/O during the first minutes, which can cause audio dropouts | Low |
+| Disable cloud-init after the first boot (`/etc/cloud/cloud-init.disabled`); it runs before `sysinit.target` on every boot | About 0.6 s (3.5 s on the first boot) | Low; check the netplan WiFi profile survives |
+| Skip or speed up the `fsck` of the FAT boot partition, which `cloud-init` waits for | About 0.6 s | Medium; a damaged boot partition goes unnoticed |
 | Skip the initramfs if one is loaded (root on NVMe ext4 doesn't need it) | Shorter kernel phase | Medium; affects boot recovery |
 | `dtparam=pciex1_gen=3` | Faster NVMe | Medium; Gen 3 isn't officially certified on the Pi 5 |
 | Trim EEPROM boot order to try NVMe only | Shorter firmware phase | Medium; removes SD/USB fallback for recovery |
@@ -109,7 +112,7 @@ it helps and doesn't cost reliability or maintainability.
 
 | Date | Label | Firmware (M0→M1) | UI visible (M2) | Audio ready (M3) | Total to UI | Notes |
 |---|---|---|---|---|---|---|
-| — | — | — | — | — | — | No hardware runs yet |
+| 2026-10-15 | baseline-reboot | not measured | 5.31 s | n/a (no interface) | — | `reboot`, not a cold boot. Kernel 1.89 s, userspace 5.73 s, `piejam.service` started at 4.58 s |
 
 ## Automated tests
 
