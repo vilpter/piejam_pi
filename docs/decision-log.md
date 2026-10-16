@@ -74,7 +74,7 @@ Resolved:
 | F5 | Emit `sd_notify READY=1` after the first frame; switch the unit to `Type=notify` | `app/` + `systemd/`, [benchmark plan](benchmark-plan.md#making-m2-exact) |
 | F6 | ~~Lint the scripts with shellcheck~~ Done: `tests/lint.sh` is clean. Still open: CI running `tests/lint.sh` and the test scripts on every push | This repo |
 | F7 | Restore memory locking without the Qt crash: lock with `MCL_CURRENT` once startup is done, or lock only the audio engine's buffers; then raise `LimitMEMLOCK` again (D16) | App |
-| F8 | Reduce the Info page's diagnostics to the actionable ones (scoped: a level threshold on the Info sink cuts today's sample from 26 entries to 10) | App |
+| F8 | ~~Reduce the Info page's diagnostics to the actionable ones~~ Done in #3: an info threshold on the Info page's sink, and user-facing levels for network messages. The badge after start went from 16 to 0, and from 27 to 5 after a full Network-page run | `app/` |
 | F9 | PieJam drives one sound card. Four inputs need one interface with four or more inputs (Scarlett 4i4/8i6/18i8); two 2i2s can't be combined (separate clocks) without a substantial app change. Owner to decide | — |
 | F10 | Phase 2 candidates seen on hardware: cloud-init sits before `sysinit.target` (about 0.6 s per boot, 3.5 s on the first), and the boot partition's `fsck` adds about 0.6 s | [Benchmark plan](benchmark-plan.md) |
 
