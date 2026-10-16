@@ -68,9 +68,9 @@ Resolved:
 | # | Task | Where |
 |---|---|---|
 | F1 | ~~Merge `nooploop/master` into the fork~~ Already done: the fork contains upstream's current `master` (`005feb30`) | — |
-| F2 | Remove the Buildroot-specific paths (busybox `udhcpc`, `modprobe brcmfmac`, `/etc/init.d/S60nfs`) as part of F4 | `app/` |
+| F2 | ~~Remove the Buildroot-specific WiFi paths (busybox `udhcpc`, `modprobe brcmfmac`)~~ Done in #2. `/etc/init.d/S60nfs` goes with the NFS part of F4 | `app/` |
 | F3 | ~~Review the Buildroot cross-compile fixes~~ Not applicable to the current fork history | — |
-| F4 | Rework the network backend onto `nmcli`/systemd with `QProcess` argument lists; start NFS on demand, never enable it at boot. Add NFS packages and narrow privilege rules at the same time | `app/` + provisioning, [ADR 0004](adr/0004-network-backend-nmcli.md) |
+| F4 | Rework the network backend onto `nmcli`/systemd with `QProcess` argument lists. **WiFi done** (#2, 2026-10-15). Still open: NFS server on demand (never enabled at boot), NFS mounts, the NFS packages and narrow privilege rules | `app/` + provisioning, [ADR 0004](adr/0004-network-backend-nmcli.md) |
 | F5 | Emit `sd_notify READY=1` after the first frame; switch the unit to `Type=notify` | `app/` + `systemd/`, [benchmark plan](benchmark-plan.md#making-m2-exact) |
 | F6 | ~~Lint the scripts with shellcheck~~ Done: `tests/lint.sh` is clean. Still open: CI running `tests/lint.sh` and the test scripts on every push | This repo |
 | F7 | Restore memory locking without the Qt crash: lock with `MCL_CURRENT` once startup is done, or lock only the audio engine's buffers; then raise `LimitMEMLOCK` again (D16) | App |

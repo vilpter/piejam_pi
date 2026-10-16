@@ -139,7 +139,9 @@ Privileges beyond that are narrow:
 
 Recovery paths:
 
-- **SSH** is enabled and starts in parallel. It's never a boot dependency.
+- **SSH** is enabled and starts in parallel. It's never a boot dependency. Turning
+  **Network** off in PieJam turns the WiFi radio off, and NetworkManager keeps it off
+  across reboots: SSH then needs Ethernet, or Network turned on again from the panel.
 - **Local console:** `getty@tty1` is disabled, so nothing is drawn before the mixer.
   If the app is down, Alt+F2 on a USB keyboard gives a login prompt (logind starts
   consoles on demand). _Unvalidated._

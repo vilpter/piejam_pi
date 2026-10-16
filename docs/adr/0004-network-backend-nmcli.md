@@ -1,6 +1,6 @@
 # ADR 0004: Move the fork's network backend onto NetworkManager and systemd
 
-- **Status:** Accepted
+- **Status:** Accepted. WiFi implemented 2026-10-15 (#2); NFS still to do
 - **Date:** 2026-09-30
 
 ## Context
@@ -45,6 +45,18 @@ little or no change.
 - **Good:** NFS only runs when asked for, so it never costs boot time.
 - **Cost:** a backend rewrite of `network_controller.cpp`, `wifi_manager.cpp`,
   `nfs_server.cpp` and `nfs_client.cpp`, plus their tests.
+
+## Implementation notes (WiFi, 2026-10-15)
+
+- The Network switch is NetworkManager's WiFi radio. NetworkManager remembers it
+  across reboots, so turning Network off in the app keeps WiFi off until it's
+  turned on again.
+- Passwords reach `nmcli` on standard input through its connection editor, never on a
+  command line. The editor trims values, so passwords with leading or trailing spaces
+  are refused rather than saved altered.
+- Status is polled with `nmcli device show` every 3 s while the Network page is
+  visible, and not otherwise, so the audio threads don't share the CPU with process
+  launches during normal use.
 
 ## Alternatives considered
 
