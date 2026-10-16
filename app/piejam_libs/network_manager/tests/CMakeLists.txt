@@ -5,6 +5,8 @@
 if(PIEJAM_TESTS)
     add_executable(piejam_network_manager_test
         network_controller_test.cpp
+        nmcli_test.cpp
+        nmcli_process_test.cpp
         wifi_manager_test.cpp
         nfs_mount_test.cpp
         nfs_server_test.cpp

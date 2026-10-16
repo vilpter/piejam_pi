@@ -4,23 +4,16 @@
 
 #include <piejam/network_manager/wifi_manager.h>
 
+#include <piejam/network_manager/nmcli.h>
+
 #include <spdlog/spdlog.h>
 
-#include <algorithm>
-#include <array>
-#include <cctype>
-#include <cerrno>
-#include <cstdio>
-#include <cstdlib>
-#include <fstream>
-#include <regex>
-#include <sstream>
-#include <unordered_set>
+#include <QObject>
 
-#include <poll.h>
-#include <sys/socket.h>
-#include <sys/un.h>
-#include <unistd.h>
+#include <algorithm>
+#include <cctype>
+#include <filesystem>
+#include <memory>
 
 namespace piejam::network_manager
 {
@@ -28,473 +21,64 @@ namespace piejam::network_manager
 namespace
 {
 
-/// Send a command to wpa_supplicant via its Unix control socket and
-/// return the response. This avoids fork()/popen() entirely, making
-/// it safe to call from any thread without deadlock risk.
-///
-/// Protocol:
-///   - wpa_supplicant listens on /var/run/wpa_supplicant/<iface>
-///   - Client binds a unique local socket path and sends datagram
-///   - Response arrives as one or more datagrams
-///   - Unsolicited events are prefixed with '<N>' (N=0..4); skip them
-///   - Timeout via poll() — never blocks indefinitely
-///
-/// Returns empty string on error or timeout.
-class WpaSocket
+auto
+qs(std::string const& s) -> QString
 {
-public:
-    explicit WpaSocket(std::string const& interface)
-    {
-        // Build local socket path — must be unique per instance
-        // Use pid + pointer to ensure uniqueness across concurrent calls
-        char local_path[108];
-        ::snprintf(
-            local_path,
-            sizeof(local_path),
-            "/tmp/wpa_ctrl_%d_%p",
-            static_cast<int>(::getpid()),
-            static_cast<void*>(this));
-
-        m_local_path = local_path;
-
-        m_fd = ::socket(AF_UNIX, SOCK_DGRAM, 0);
-        if (m_fd < 0)
-        {
-            spdlog::error("wpa_socket: socket() failed (errno={})", errno);
-            return;
-        }
-
-        // Bind local socket so wpa_supplicant can send responses back
-        struct sockaddr_un local_addr{};
-        local_addr.sun_family = AF_UNIX;
-        ::strncpy(
-            local_addr.sun_path,
-            m_local_path.c_str(),
-            sizeof(local_addr.sun_path) - 1);
-
-        if (::bind(m_fd, reinterpret_cast<struct sockaddr*>(&local_addr),
-                   sizeof(local_addr)) != 0)
-        {
-            spdlog::error(
-                "wpa_socket: bind({}) failed (errno={})",
-                m_local_path,
-                errno);
-            ::close(m_fd);
-            m_fd = -1;
-            return;
-        }
-
-        // Connect to wpa_supplicant's control socket
-        std::string ctrl_path = "/var/run/wpa_supplicant/" + interface;
-        struct sockaddr_un remote_addr{};
-        remote_addr.sun_family = AF_UNIX;
-        ::strncpy(
-            remote_addr.sun_path,
-            ctrl_path.c_str(),
-            sizeof(remote_addr.sun_path) - 1);
-
-        if (::connect(
-                m_fd,
-                reinterpret_cast<struct sockaddr*>(&remote_addr),
-                sizeof(remote_addr)) != 0)
-        {
-            spdlog::error(
-                "wpa_socket: connect({}) failed (errno={})",
-                ctrl_path,
-                errno);
-            ::close(m_fd);
-            m_fd = -1;
-            ::unlink(m_local_path.c_str());
-            m_local_path.clear();
-            return;
-        }
-    }
-
-    ~WpaSocket()
-    {
-        if (m_fd >= 0)
-            ::close(m_fd);
-        if (!m_local_path.empty())
-            ::unlink(m_local_path.c_str());
-    }
-
-    // Non-copyable, non-movable — owns fd and path
-    WpaSocket(WpaSocket const&) = delete;
-    WpaSocket& operator=(WpaSocket const&) = delete;
-
-    bool is_open() const { return m_fd >= 0; }
-
-    /// Send command and return response. Skips unsolicited event
-    /// messages (prefixed with '<N>'). Times out after timeout_ms.
-    std::string
-    send_cmd(std::string const& cmd, int timeout_ms = 5000)
-    {
-        if (m_fd < 0)
-            return {};
-
-        if (::send(m_fd, cmd.c_str(), cmd.size(), 0) < 0)
-        {
-            spdlog::error(
-                "wpa_socket: send({}) failed (errno={})", cmd, errno);
-            return {};
-        }
-
-        // Read response, skipping unsolicited event datagrams
-        std::array<char, 4096> buf;
-        struct pollfd pfd{m_fd, POLLIN, 0};
-
-        for (;;)
-        {
-            int ret = ::poll(&pfd, 1, timeout_ms);
-            if (ret < 0)
-            {
-                if (errno == EINTR)
-                    continue; // signal interrupted poll — retry
-                spdlog::error(
-                    "wpa_socket: poll() failed (errno={})", errno);
-                return {};
-            }
-            if (ret == 0)
-            {
-                spdlog::warn(
-                    "wpa_socket: timeout waiting for response to: {}",
-                    cmd);
-                return {};
-            }
-
-            ssize_t n = ::recv(m_fd, buf.data(), buf.size() - 1, 0);
-            if (n <= 0)
-                return {};
-
-            buf[static_cast<size_t>(n)] = '\0';
-
-            // Skip unsolicited event messages — they start with '<N>'
-            // where N is a single digit priority level (0-4)
-            if (n >= 3 && buf[0] == '<' && buf[2] == '>')
-                continue;
-
-            return std::string(buf.data(), static_cast<size_t>(n));
-        }
-    }
-
-private:
-    int m_fd{-1};
-    std::string m_local_path;
-};
-
-/// Send a wpa_supplicant control command via Unix socket.
-/// Safe to call from any thread — no fork/popen involved.
-std::string
-wpa_ctrl(std::string const& interface, std::string const& cmd)
-{
-    // wpa_supplicant control socket requires uppercase command verbs.
-    // Uppercase only the first word (the command); arguments (SSIDs,
-    // passwords, network IDs) must remain as-is.
-    std::string upper_cmd = cmd;
-    auto first_space = upper_cmd.find(' ');
-    auto verb_end = (first_space == std::string::npos) ? upper_cmd.size() : first_space;
-    for (std::size_t i = 0; i < verb_end; ++i)
-        upper_cmd[i] = static_cast<char>(std::toupper(static_cast<unsigned char>(upper_cmd[i])));
-
-    WpaSocket sock(interface);
-    if (!sock.is_open())
-    {
-        spdlog::warn("wpa_ctrl: socket not available for: {}", cmd);
-        return {};
-    }
-    auto response = sock.send_cmd(upper_cmd);
-    if (response.empty())
-        spdlog::warn("wpa_ctrl: empty response for '{}'", upper_cmd);
-    return response;
+    return QString::fromStdString(s);
 }
 
-/// Execute a shell command and return output.
-/// NOTE: Uses popen/fork — only call from the Qt main thread.
-/// For wpa_supplicant commands use wpa_ctrl() instead.
-std::string
-execute_command(char const* cmd)
+/// nmcli's interactive editor trims values and reads one command per line,
+/// so passwords with surrounding spaces or control characters can't be
+/// passed through it faithfully. Returns an error message, or empty.
+auto
+check_password(std::string const& password) -> std::string
 {
-    std::array<char, 256> buffer;
-    std::string result;
-
-    auto pipe_deleter = [](FILE* f) { if (f) pclose(f); };
-    std::unique_ptr<FILE, decltype(pipe_deleter)> pipe(
-        popen(cmd, "r"), pipe_deleter);
-    if (!pipe)
-        return result;
-
-    while (fgets(
-               buffer.data(),
-               static_cast<int>(buffer.size()),
-               pipe.get()) != nullptr)
-        result += buffer.data();
-
-    return result;
-}
-
-/// Thin wrapper — kept for call sites that use the old wpa_cli()
-/// name but now routes through the socket-based wpa_ctrl().
-std::string
-wpa_cli(std::string const& interface, std::string const& cmd)
-{
-    return wpa_ctrl(interface, cmd);
-}
-
-/// Parse security flags from wpa_cli scan results
-wifi_security
-parse_security_flags(std::string const& flags)
-{
-    if (flags.find("WPA3") != std::string::npos)
-        return wifi_security::wpa3;
-    if (flags.find("WPA2") != std::string::npos)
-        return wifi_security::wpa2;
-    if (flags.find("WPA") != std::string::npos)
-        return wifi_security::wpa;
-    if (flags.find("WEP") != std::string::npos)
-        return wifi_security::wep;
-    if (flags.find("ESS") != std::string::npos && flags.find("WPA") == std::string::npos)
-        return wifi_security::open;
-    return wifi_security::unknown;
-}
-
-/// Parse scan results from wpa_cli
-std::vector<wifi_network>
-parse_scan_results(std::string const& output)
-{
-    std::vector<wifi_network> networks;
-    std::istringstream stream(output);
-    std::string line;
-
-    // Skip header line
-    std::getline(stream, line);
-
-    // Format: bssid / frequency / signal level / flags / ssid
-    while (std::getline(stream, line))
+    if (std::ranges::any_of(password, [](unsigned char c) {
+            return c < 0x20 || c == 0x7f;
+        }))
     {
-        if (line.empty())
-            continue;
+        return "The password contains control characters.";
+    }
+    if (!password.empty() &&
+        (std::isspace(static_cast<unsigned char>(password.front())) ||
+         std::isspace(static_cast<unsigned char>(password.back()))))
+    {
+        return "Passwords that start or end with a space aren't supported.";
+    }
+    return {};
+}
 
-        std::istringstream line_stream(line);
-        wifi_network net;
+/// The profile property that holds the password for a security type.
+auto
+secret_property(wifi_security security) -> char const*
+{
+    return security == wifi_security::wep ? "802-11-wireless-security.wep-key0"
+                                          : "802-11-wireless-security.psk";
+}
 
-        std::string freq_str;
-        std::string signal_str;
-        std::string flags;
-
-        line_stream >> net.bssid >> freq_str >> signal_str >> flags;
-
-        // Rest of line is SSID (may contain spaces)
-        std::getline(line_stream >> std::ws, net.ssid);
-
-        if (net.ssid.empty() || net.bssid.empty())
-            continue;
-
-        try
+/// Split `nmcli -g` output into its values, one per line, keeping empty
+/// values (a profile without security has an empty key-mgmt).
+auto
+get_values(std::string const& output) -> std::vector<std::string>
+{
+    std::vector<std::string> values;
+    std::size_t start = 0;
+    while (start < output.size())
+    {
+        auto const end = output.find('\n', start);
+        values.push_back(
+            nmcli::unescape(
+                std::string_view{output}.substr(
+                    start,
+                    end == std::string::npos ? std::string::npos
+                                             : end - start)));
+        if (end == std::string::npos)
         {
-            net.frequency_mhz = std::stoi(freq_str);
-            net.signal_strength = std::stoi(signal_str);
+            break;
         }
-        catch (...)
-        {
-            continue;
-        }
-
-        net.signal_percent = signal_dbm_to_percent(net.signal_strength);
-        net.band = frequency_to_band(net.frequency_mhz);
-        net.security = parse_security_flags(flags);
-
-        networks.push_back(std::move(net));
+        start = end + 1;
     }
-
-    // Sort by signal strength (strongest first)
-    std::sort(
-        networks.begin(),
-        networks.end(),
-        [](wifi_network const& a, wifi_network const& b) {
-            return a.signal_percent > b.signal_percent;
-        });
-
-    // Remove duplicates (same SSID, keep strongest signal)
-    // std::unique only works on adjacent elements, so use a set
-    std::unordered_set<std::string> seen;
-    auto it = std::remove_if(
-        networks.begin(),
-        networks.end(),
-        [&seen](wifi_network const& net) {
-            return !seen.insert(net.ssid).second;
-        });
-    networks.erase(it, networks.end());
-
-    return networks;
-}
-
-/// Get current connection info from wpa_cli status
-struct connection_info
-{
-    std::string ssid;
-    std::string bssid;
-    std::string ip_address;
-    std::string wpa_state;
-    int frequency{0};
-};
-
-connection_info
-get_connection_info(std::string const& interface)
-{
-    connection_info info;
-    std::string output = wpa_cli(interface, "status");
-    std::istringstream stream(output);
-    std::string line;
-
-    while (std::getline(stream, line))
-    {
-        auto pos = line.find('=');
-        if (pos == std::string::npos)
-            continue;
-
-        std::string key = line.substr(0, pos);
-        std::string value = line.substr(pos + 1);
-
-        if (key == "ssid")
-            info.ssid = value;
-        else if (key == "bssid")
-            info.bssid = value;
-        else if (key == "ip_address")
-            info.ip_address = value;
-        else if (key == "wpa_state")
-            info.wpa_state = value;
-        else if (key == "freq")
-        {
-            try
-            {
-                info.frequency = std::stoi(value);
-            }
-            catch (...)
-            {
-            }
-        }
-    }
-
-    return info;
-}
-
-/// Get IP address from interface
-std::string
-get_ip_address(std::string const& interface)
-{
-    std::string cmd = "ip -4 addr show " + interface +
-                      " | awk '/inet /{split($2,a,\"/\"); print a[1]}'";
-    std::string result = execute_command(cmd.c_str());
-    // Remove trailing newline
-    while (!result.empty() && (result.back() == '\n' || result.back() == '\r'))
-        result.pop_back();
-    return result;
-}
-
-/// Get signal strength of current connection
-int
-get_current_signal(std::string const& interface)
-{
-    std::string output = wpa_cli(interface, "signal_poll");
-    std::istringstream stream(output);
-    std::string line;
-
-    while (std::getline(stream, line))
-    {
-        if (line.find("RSSI=") == 0)
-        {
-            try
-            {
-                int rssi = std::stoi(line.substr(5));
-                return signal_dbm_to_percent(rssi);
-            }
-            catch (...)
-            {
-            }
-        }
-    }
-    return 0;
-}
-
-/// Parse saved networks from wpa_cli list_networks
-std::vector<wifi_saved_network>
-parse_saved_networks(std::string const& output)
-{
-    std::vector<wifi_saved_network> networks;
-    std::istringstream stream(output);
-    std::string line;
-
-    // Skip header line
-    std::getline(stream, line);
-
-    // Format: network id / ssid / bssid / flags
-    while (std::getline(stream, line))
-    {
-        if (line.empty())
-            continue;
-
-        std::istringstream line_stream(line);
-        wifi_saved_network net;
-
-        std::string id;
-        std::string bssid;
-        std::string flags;
-
-        line_stream >> id >> net.ssid >> bssid >> flags;
-
-        if (net.ssid.empty())
-            continue;
-
-        // Parse flags for disabled status
-        net.auto_connect = (flags.find("DISABLED") == std::string::npos);
-
-        networks.push_back(std::move(net));
-    }
-
-    return networks;
-}
-
-/// Add or update network in wpa_supplicant
-int
-add_network_to_wpa(
-    std::string const& interface,
-    std::string const& ssid,
-    std::string const& password,
-    wifi_security security)
-{
-    // Add new network
-    std::string result = wpa_cli(interface, "add_network");
-    int network_id = -1;
-    try
-    {
-        network_id = std::stoi(result);
-    }
-    catch (...)
-    {
-        spdlog::error("ADD_NETWORK failed: '{}'", result);
-        return -1;
-    }
-
-    std::string id_str = std::to_string(network_id);
-
-    // Set SSID — wpa_supplicant control socket protocol uses
-    // double-quoted strings directly (no shell quoting needed)
-    wpa_cli(interface, "set_network " + id_str + " ssid \"" + ssid + "\"");
-
-    // Set security
-    if (security == wifi_security::open || password.empty())
-    {
-        wpa_cli(interface, "set_network " + id_str + " key_mgmt NONE");
-    }
-    else
-    {
-        wpa_cli(interface, "set_network " + id_str + " psk \"" + password + "\"");
-    }
-
-    // Enable network
-    wpa_cli(interface, "enable_network " + id_str);
-
-    return network_id;
+    return values;
 }
 
 } // namespace
@@ -502,93 +86,438 @@ add_network_to_wpa(
 struct wifi_manager::impl
 {
     std::string interface;
-    wifi_connection_status connection_status{wifi_connection_status::disconnected};
-    std::vector<wifi_network> cached_networks;
+    wifi_connection_status connection_status{
+        wifi_connection_status::disconnected};
     wifi_network current_network;
+    std::string current_ip;
+    std::vector<wifi_network> cached_networks;
+    std::vector<wifi_saved_network> saved;
     bool auto_reconnect_enabled{true};
+
+    bool status_pending{};
+    bool scan_pending{};
+    unsigned saved_generation{};
 
     scan_complete_callback on_scan_complete;
     connection_changed_callback on_connection_changed;
+    saved_networks_callback on_saved_networks;
     error_callback on_error;
+
+    // Owns the running nmcli processes. Declared last so it's destroyed
+    // first: a pending process can't call back into a half-destroyed impl.
+    std::unique_ptr<QObject> context{std::make_unique<QObject>()};
 
     explicit impl(std::string iface)
         : interface(std::move(iface))
     {
-        // Check initial connection status
-        auto info = get_connection_info(interface);
-        if (info.wpa_state == "COMPLETED")
-        {
-            connection_status = wifi_connection_status::connected;
-            current_network.ssid = info.ssid;
-            current_network.bssid = info.bssid;
-            current_network.frequency_mhz = info.frequency;
-            current_network.band = frequency_to_band(info.frequency);
-            current_network.is_connected = true;
-        }
-
         spdlog::info(
-            "WiFi manager initialized for interface {}, status: {}",
-            interface,
-            info.wpa_state);
+            "WiFi manager initialized for interface {} (NetworkManager)",
+            interface);
     }
 
-    void update_connection_status()
+    void
+    run(QStringList const& args,
+        nmcli::result_handler on_done,
+        std::string const& stdin_data = {},
+        int timeout_ms = 15000)
     {
-        auto info = get_connection_info(interface);
-        wifi_connection_status new_status;
+        nmcli::run(*context, args, std::move(on_done), stdin_data, timeout_ms);
+    }
 
-        if (info.wpa_state == "COMPLETED")
+    void report_error(std::string const& message)
+    {
+        spdlog::warn("WiFi: {}", message);
+        if (on_error)
         {
-            new_status = wifi_connection_status::connected;
-            current_network.ssid = info.ssid;
-            current_network.bssid = info.bssid;
-            current_network.frequency_mhz = info.frequency;
-            current_network.band = frequency_to_band(info.frequency);
-            current_network.is_connected = true;
+            on_error(message);
         }
-        else if (info.wpa_state == "ASSOCIATING" || info.wpa_state == "ASSOCIATED" ||
-                 info.wpa_state == "4WAY_HANDSHAKE" ||
-                 info.wpa_state == "GROUP_HANDSHAKE")
+    }
+
+    auto find_saved(std::string const& ssid) const -> wifi_saved_network const*
+    {
+        auto it = std::ranges::find(saved, ssid, &wifi_saved_network::ssid);
+        return it != saved.end() ? &*it : nullptr;
+    }
+
+    auto find_available(std::string const& ssid) const -> wifi_network const*
+    {
+        auto it = std::ranges::find(cached_networks, ssid, &wifi_network::ssid);
+        return it != cached_networks.end() ? &*it : nullptr;
+    }
+
+    void refresh_status()
+    {
+        if (status_pending)
         {
-            new_status = wifi_connection_status::connecting;
+            return;
         }
-        else
+        status_pending = true;
+
+        run({"-t",
+             "-f",
+             "GENERAL.STATE,GENERAL.CONNECTION,IP4.ADDRESS,AP",
+             "device",
+             "show",
+             qs(interface)},
+            [this](nmcli::result const& r) {
+                status_pending = false;
+                // A missing device or a stopped NetworkManager reads as
+                // disconnected.
+                apply_status(
+                    r.ok ? nmcli::parse_device_status(r.output)
+                         : nmcli::device_status{});
+            });
+    }
+
+    void apply_status(nmcli::device_status const& st)
+    {
+        auto status = wifi_connection_status::disconnected;
+        if (st.state == nmcli::device_state_activated)
         {
-            new_status = wifi_connection_status::disconnected;
-            current_network = {};
+            status = wifi_connection_status::connected;
+        }
+        else if (
+            st.state >= nmcli::device_state_prepare &&
+            st.state < nmcli::device_state_activated)
+        {
+            status = wifi_connection_status::connecting;
         }
 
-        if (new_status != connection_status)
+        wifi_network network;
+        std::string ip;
+        if (status == wifi_connection_status::connected)
         {
-            auto prev_status = connection_status;
-            connection_status = new_status;
-
-            // Start DHCP when transitioning to connected.
-            // Must use std::system with & to avoid blocking:
-            // execute_command (popen) blocks until the child closes
-            // stdout, but udhcpc runs as a long-lived daemon and
-            // never exits, so popen would block forever.
-            if (new_status == wifi_connection_status::connected &&
-                prev_status != wifi_connection_status::connected)
+            auto const ssid =
+                st.active_ssid.empty() ? st.connection : st.active_ssid;
+            if (auto const* known = find_available(ssid))
             {
-                spdlog::info("Starting udhcpc on {}", interface);
-                std::string dhcp_cmd =
-                    "udhcpc -i " + interface +
-                    " -p /var/run/udhcpc." + interface + ".pid"
-                    " -t 5 -T 2 -S"
-                    " >/dev/null 2>&1 &";
-                [[maybe_unused]] auto rc = std::system(dhcp_cmd.c_str());
+                network = *known;
             }
-
-            if (on_connection_changed)
-            {
-                on_connection_changed(
-                    connection_status,
-                    connection_status == wifi_connection_status::connected
-                        ? &current_network
-                        : nullptr);
-            }
+            network.ssid = ssid;
+            network.signal_percent = st.active_signal;
+            network.is_connected = true;
+            ip = st.ip_address;
         }
+
+        for (auto& net : cached_networks)
+        {
+            net.is_connected =
+                !network.ssid.empty() && net.ssid == network.ssid;
+        }
+
+        bool const changed =
+            status != connection_status ||
+            network.ssid != current_network.ssid ||
+            network.signal_percent != current_network.signal_percent ||
+            ip != current_ip;
+
+        connection_status = status;
+        current_network = std::move(network);
+        current_ip = std::move(ip);
+
+        if (changed && on_connection_changed)
+        {
+            on_connection_changed(
+                connection_status,
+                connection_status == wifi_connection_status::connected
+                    ? &current_network
+                    : nullptr);
+        }
+    }
+
+    void list_networks(bool rescan)
+    {
+        if (scan_pending)
+        {
+            return;
+        }
+        scan_pending = true;
+
+        run(
+            {"-t",
+             "-f",
+             "IN-USE,SSID,BSSID,FREQ,SIGNAL,SECURITY",
+             "device",
+             "wifi",
+             "list",
+             "ifname",
+             qs(interface),
+             "--rescan",
+             rescan ? "yes" : "no"},
+            [this, rescan](nmcli::result const& r) {
+                scan_pending = false;
+                if (r.ok)
+                {
+                    // nmcli marks the network in use; apply_status() keeps
+                    // the mark current afterwards.
+                    cached_networks = nmcli::parse_wifi_list(r.output);
+                    if (rescan)
+                    {
+                        spdlog::info(
+                            "WiFi scan complete, found {} networks",
+                            cached_networks.size());
+                    }
+                }
+                else
+                {
+                    report_error("WiFi scan failed: " + r.error);
+                }
+                if (on_scan_complete)
+                {
+                    on_scan_complete(cached_networks);
+                }
+            },
+            {},
+            30000);
+    }
+
+    void refresh_saved_networks()
+    {
+        auto const generation = ++saved_generation;
+
+        run({"-t",
+             "-f",
+             "NAME,UUID,TYPE,AUTOCONNECT,AUTOCONNECT-PRIORITY",
+             "connection",
+             "show"},
+            [this, generation](nmcli::result const& r) {
+                if (generation != saved_generation)
+                {
+                    return; // a newer refresh is under way
+                }
+                if (!r.ok)
+                {
+                    report_error("Couldn't list saved networks: " + r.error);
+                    return;
+                }
+
+                auto profiles =
+                    std::make_shared<std::vector<wifi_saved_network>>();
+                for (auto const& c : nmcli::parse_connections(r.output))
+                {
+                    if (c.type == nmcli::wifi_connection_type)
+                    {
+                        profiles->push_back(
+                            wifi_saved_network{
+                                .ssid = {},
+                                .priority = c.priority,
+                                .auto_connect = c.autoconnect,
+                                .hidden = false,
+                                .security = wifi_security::unknown,
+                                .uuid = c.uuid});
+                    }
+                }
+                load_profile_details(generation, std::move(profiles));
+            });
+    }
+
+    /// Look up each profile's SSID and security, then publish the list.
+    void load_profile_details(
+        unsigned generation,
+        std::shared_ptr<std::vector<wifi_saved_network>> profiles)
+    {
+        auto remaining = std::make_shared<std::size_t>(profiles->size());
+
+        auto publish = [this, generation, profiles]() {
+            if (generation != saved_generation)
+            {
+                return;
+            }
+            std::erase_if(*profiles, [](wifi_saved_network const& n) {
+                return n.ssid.empty();
+            });
+            std::ranges::stable_sort(
+                *profiles,
+                [](wifi_saved_network const& a, wifi_saved_network const& b) {
+                    return a.priority > b.priority;
+                });
+            saved = std::move(*profiles);
+            if (on_saved_networks)
+            {
+                on_saved_networks(saved);
+            }
+        };
+
+        if (profiles->empty())
+        {
+            publish();
+            return;
+        }
+
+        for (std::size_t i = 0; i < profiles->size(); ++i)
+        {
+            run({"-t",
+                 "-g",
+                 "802-11-wireless.ssid,802-11-wireless-security.key-mgmt,"
+                 "802-11-wireless.hidden",
+                 "connection",
+                 "show",
+                 "uuid",
+                 qs((*profiles)[i].uuid)},
+                [profiles, remaining, publish, i](nmcli::result const& r) {
+                    if (r.ok)
+                    {
+                        auto const values = get_values(r.output);
+                        auto& profile = (*profiles)[i];
+                        profile.ssid = values.empty() ? "" : values[0];
+                        profile.security = nmcli::key_mgmt_to_security(
+                            values.size() > 1 ? values[1] : "");
+                        profile.hidden =
+                            values.size() > 2 && values[2] == "yes";
+                    }
+                    if (--*remaining == 0)
+                    {
+                        publish();
+                    }
+                });
+        }
+    }
+
+    /// Store a password in a profile through nmcli's editor, which reads it
+    /// from standard input.
+    void set_secret(
+        std::string const& uuid,
+        wifi_security security,
+        std::string const& password,
+        bool persistent,
+        done_callback on_done)
+    {
+        std::string commands = "set ";
+        commands += secret_property(security);
+        commands += ' ';
+        commands += password;
+        commands += persistent ? "\nsave persistent\n" : "\nsave temporary\n";
+        commands += "quit\n";
+
+        run(
+            {"connection", "edit", "uuid", qs(uuid)},
+            [on_done = std::move(on_done)](nmcli::result const& r) {
+                // The editor exits with status 0 even if saving failed.
+                if (r.ok &&
+                    r.output.find("successfully updated") != std::string::npos)
+                {
+                    on_done(true, {});
+                    return;
+                }
+                if (auto const pos = r.output.find("Error: ");
+                    pos != std::string::npos)
+                {
+                    auto const message = r.output.substr(pos + 7);
+                    on_done(false, message.substr(0, message.find('\n')));
+                    return;
+                }
+                on_done(
+                    false,
+                    r.error.empty() ? "Couldn't save the password" : r.error);
+            },
+            commands);
+    }
+
+    /// Bring up a profile. A profile created just for this attempt is
+    /// deleted again if it fails, so a wrong password leaves nothing behind.
+    void activate(
+        std::string const& uuid,
+        bool delete_on_failure,
+        done_callback on_done)
+    {
+        run(
+            {"--wait",
+             "60",
+             "connection",
+             "up",
+             "uuid",
+             qs(uuid),
+             "ifname",
+             qs(interface)},
+            [this, uuid, delete_on_failure, on_done = std::move(on_done)](
+                nmcli::result const& r) {
+                if (!r.ok && delete_on_failure)
+                {
+                    run({"connection", "delete", "uuid", qs(uuid)},
+                        [this](nmcli::result const&) {
+                            refresh_saved_networks();
+                        });
+                }
+                else
+                {
+                    refresh_saved_networks();
+                }
+                refresh_status();
+                on_done(r.ok, r.error);
+            },
+            {},
+            75000);
+    }
+
+    /// Create a profile for a network that isn't saved yet, then connect.
+    void add_and_activate(
+        std::string const& ssid,
+        std::string const& password,
+        bool remember,
+        done_callback on_done)
+    {
+        auto security =
+            password.empty() ? wifi_security::open : wifi_security::wpa2;
+        if (auto const* net = find_available(ssid))
+        {
+            security = net->security;
+        }
+
+        QStringList args{
+            "connection",
+            "add",
+            "type",
+            "wifi",
+            "ifname",
+            qs(interface),
+            "con-name",
+            qs(ssid),
+            "ssid",
+            qs(ssid),
+            "save",
+            remember ? "yes" : "no"};
+        if (auto const key_mgmt = nmcli::security_to_key_mgmt(security);
+            !key_mgmt.empty())
+        {
+            args << "802-11-wireless-security.key-mgmt" << qs(key_mgmt);
+        }
+
+        run(args,
+            [this, password, remember, security, on_done = std::move(on_done)](
+                nmcli::result const& r) {
+                auto const uuid = nmcli::parse_added_uuid(r.output);
+                if (!r.ok || uuid.empty())
+                {
+                    on_done(
+                        false,
+                        r.error.empty() ? "Couldn't add the network" : r.error);
+                    return;
+                }
+
+                if (password.empty() || security == wifi_security::open)
+                {
+                    activate(uuid, true, on_done);
+                    return;
+                }
+
+                set_secret(
+                    uuid,
+                    security,
+                    password,
+                    remember,
+                    [this, uuid, on_done](bool ok, std::string const& error) {
+                        if (ok)
+                        {
+                            activate(uuid, true, on_done);
+                            return;
+                        }
+                        run({"connection", "delete", "uuid", qs(uuid)},
+                            [this](nmcli::result const&) {
+                                refresh_saved_networks();
+                            });
+                        on_done(false, error);
+                    });
+            });
     }
 };
 
@@ -601,6 +530,12 @@ wifi_manager::~wifi_manager() = default;
 
 wifi_manager::wifi_manager(wifi_manager&&) noexcept = default;
 wifi_manager& wifi_manager::operator=(wifi_manager&&) noexcept = default;
+
+void
+wifi_manager::refresh_status()
+{
+    m_impl->refresh_status();
+}
 
 wifi_connection_status
 wifi_manager::status() const noexcept
@@ -617,74 +552,34 @@ wifi_manager::current_ssid() const
 std::string
 wifi_manager::ip_address() const
 {
-    return get_ip_address(m_impl->interface);
+    return m_impl->current_ip;
 }
 
 int
 wifi_manager::signal_strength() const
 {
-    if (m_impl->connection_status != wifi_connection_status::connected)
-        return 0;
-    return get_current_signal(m_impl->interface);
+    return m_impl->current_network.signal_percent;
 }
 
 bool
 wifi_manager::is_interface_available() const
 {
-    std::string cmd = "ip link show " + m_impl->interface + " 2>/dev/null";
-    std::string result = execute_command(cmd.c_str());
-    return !result.empty();
+    std::error_code ec;
+    return std::filesystem::exists(
+        std::filesystem::path{"/sys/class/net"} / m_impl->interface,
+        ec);
 }
 
 void
 wifi_manager::scan_networks()
 {
-    // Trigger scan — retry on FAIL-BUSY (wpa_supplicant may be
-    // in its initial auto-scan right after startup)
-    std::string result;
-    constexpr int scan_retries = 3;
-    for (int attempt = 0; attempt < scan_retries; ++attempt)
-    {
-        result = wpa_cli(m_impl->interface, "scan");
+    m_impl->list_networks(true);
+}
 
-        if (result.find("OK") != std::string::npos)
-            break;
-
-        if (attempt + 1 < scan_retries)
-            std::this_thread::sleep_for(std::chrono::milliseconds(1500));
-    }
-
-    if (result.find("OK") == std::string::npos)
-    {
-        spdlog::warn("Failed to initiate WiFi scan");
-        if (m_impl->on_error)
-            m_impl->on_error("Failed to initiate WiFi scan");
-        return;
-    }
-
-    // Wait briefly for scan to complete
-    // In production, this should be async with event monitoring
-    std::this_thread::sleep_for(std::chrono::seconds(2));
-
-    // Get results
-    result = wpa_cli(m_impl->interface, "scan_results");
-    m_impl->cached_networks = parse_scan_results(result);
-
-    // Mark current network as connected
-    for (auto& net : m_impl->cached_networks)
-    {
-        if (net.ssid == m_impl->current_network.ssid)
-        {
-            net.is_connected = true;
-        }
-    }
-
-    spdlog::info("WiFi scan complete, found {} networks", m_impl->cached_networks.size());
-
-    if (m_impl->on_scan_complete)
-    {
-        m_impl->on_scan_complete(m_impl->cached_networks);
-    }
+void
+wifi_manager::list_networks()
+{
+    m_impl->list_networks(false);
 }
 
 std::vector<wifi_network> const&
@@ -693,178 +588,189 @@ wifi_manager::available_networks() const
     return m_impl->cached_networks;
 }
 
-int
-wifi_manager::connect_start(
+void
+wifi_manager::connect(
     std::string const& ssid,
     std::string const& password,
-    bool remember)
+    bool remember,
+    done_callback on_done)
 {
     spdlog::info("Connecting to WiFi network: {}", ssid);
 
-    // Clean up orphaned networks (empty SSID from crashed ADD_NETWORK
-    // or stale config). These can interfere with SELECT_NETWORK.
-    {
-        std::string list = wpa_cli(m_impl->interface, "list_networks");
-        std::istringstream stream(list);
-        std::string line;
-        std::getline(stream, line); // skip header
-        while (std::getline(stream, line))
-        {
-            if (line.empty())
-                continue;
-            std::istringstream ls(line);
-            std::string id, net_ssid;
-            ls >> id >> net_ssid;
-            if (net_ssid.empty() || net_ssid == "any")
+    done_callback done =
+        [ssid,
+         on_done = std::move(on_done)](bool ok, std::string const& error) {
+            if (ok)
             {
-                wpa_cli(m_impl->interface, "remove_network " + id);
+                spdlog::info("Connected to WiFi network: {}", ssid);
             }
-        }
-    }
+            else
+            {
+                spdlog::warn("Couldn't connect to {}: {}", ssid, error);
+            }
+            if (on_done)
+            {
+                on_done(ok, error);
+            }
+        };
 
-    // Check if network is already saved
-    auto saved = saved_networks();
-    int network_id = -1;
-
-    for (size_t i = 0; i < saved.size(); ++i)
+    if (auto const problem = check_password(password); !problem.empty())
     {
-        if (saved[i].ssid == ssid)
-        {
-            network_id = static_cast<int>(i);
-            break;
-        }
+        done(false, problem);
+        return;
     }
 
-    // Find network in scan results to get security type
-    wifi_security security = wifi_security::wpa2;
-    for (auto const& net : m_impl->cached_networks)
+    auto const* saved = m_impl->find_saved(ssid);
+    if (!saved)
     {
-        if (net.ssid == ssid)
-        {
-            security = net.security;
-            break;
-        }
+        m_impl->add_and_activate(ssid, password, remember, std::move(done));
+        return;
     }
 
-    // Add network if not saved, or if we want to remember with new password
-    if (network_id < 0 || remember)
+    auto const uuid = saved->uuid;
+    if (password.empty())
     {
-        network_id = add_network_to_wpa(m_impl->interface, ssid, password, security);
-        if (network_id < 0)
-        {
-            spdlog::error("Failed to add network to wpa_supplicant");
-            if (m_impl->on_error)
-                m_impl->on_error("Failed to add network to wpa_supplicant");
-            return -1;
-        }
+        m_impl->activate(uuid, false, std::move(done));
+        return;
     }
 
-    // Select and connect to network
-    std::string id_str = std::to_string(network_id);
-    wpa_cli(m_impl->interface, "select_network " + id_str);
-
-    m_impl->connection_status = wifi_connection_status::connecting;
-    if (m_impl->on_connection_changed)
-    {
-        m_impl->on_connection_changed(m_impl->connection_status, nullptr);
-    }
-
-    return network_id;
-}
-
-wifi_connection_status
-wifi_manager::poll_connection()
-{
-    m_impl->update_connection_status();
-    return m_impl->connection_status;
+    // A saved network with a new password: update it, then connect.
+    m_impl->set_secret(
+        uuid,
+        saved->security,
+        password,
+        true,
+        [impl = m_impl.get(), uuid, done](bool ok, std::string const& error) {
+            if (ok)
+            {
+                impl->activate(uuid, false, done);
+            }
+            else
+            {
+                done(false, error);
+            }
+        });
 }
 
 void
-wifi_manager::save_config()
-{
-    wpa_cli(m_impl->interface, "save_config");
-}
-
-void
-wifi_manager::disconnect()
+wifi_manager::disconnect(done_callback on_done)
 {
     spdlog::info("Disconnecting from WiFi");
-    [[maybe_unused]] auto rc = std::system("killall -q udhcpc 2>/dev/null");
-    wpa_cli(m_impl->interface, "disconnect");
-    m_impl->update_connection_status();
+    m_impl->run(
+        {"device", "disconnect", qs(m_impl->interface)},
+        [impl = m_impl.get(),
+         on_done = std::move(on_done)](nmcli::result const& r) {
+            impl->refresh_status();
+            if (!r.ok)
+            {
+                impl->report_error("Couldn't disconnect: " + r.error);
+            }
+            if (on_done)
+            {
+                on_done(r.ok, r.error);
+            }
+        });
 }
 
 void
-wifi_manager::reconnect()
+wifi_manager::reconnect(done_callback on_done)
 {
     spdlog::info("Reconnecting to WiFi");
-    wpa_cli(m_impl->interface, "reconnect");
-    m_impl->update_connection_status();
+    m_impl->run(
+        {"--wait", "60", "device", "connect", qs(m_impl->interface)},
+        [impl = m_impl.get(),
+         on_done = std::move(on_done)](nmcli::result const& r) {
+            impl->refresh_status();
+            if (on_done)
+            {
+                on_done(r.ok, r.error);
+            }
+        },
+        {},
+        75000);
 }
 
-std::vector<wifi_saved_network>
+void
+wifi_manager::refresh_saved_networks()
+{
+    m_impl->refresh_saved_networks();
+}
+
+std::vector<wifi_saved_network> const&
 wifi_manager::saved_networks() const
 {
-    std::string output = wpa_cli(m_impl->interface, "list_networks");
-    return parse_saved_networks(output);
+    return m_impl->saved;
 }
 
 bool
-wifi_manager::forget_network(std::string const& ssid)
+wifi_manager::forget_network(std::string const& ssid, done_callback on_done)
 {
-    spdlog::info("Forgetting network: {}", ssid);
-
-    auto networks = saved_networks();
-    for (size_t i = 0; i < networks.size(); ++i)
+    // NetworkManager may hold more than one profile for an SSID.
+    QStringList args{"connection", "delete"};
+    for (auto const& net : m_impl->saved)
     {
-        if (networks[i].ssid == ssid)
+        if (net.ssid == ssid)
         {
-            wpa_cli(m_impl->interface, "remove_network " + std::to_string(i));
-            wpa_cli(m_impl->interface, "save_config");
-            return true;
+            args << "uuid" << qs(net.uuid);
         }
     }
+    if (args.size() == 2)
+    {
+        return false;
+    }
 
-    return false;
+    spdlog::info("Forgetting network: {}", ssid);
+    m_impl->run(
+        args,
+        [impl = m_impl.get(),
+         on_done = std::move(on_done)](nmcli::result const& r) {
+            impl->refresh_saved_networks();
+            impl->refresh_status();
+            if (!r.ok)
+            {
+                impl->report_error("Couldn't forget the network: " + r.error);
+            }
+            if (on_done)
+            {
+                on_done(r.ok, r.error);
+            }
+        });
+    return true;
 }
 
 void
 wifi_manager::set_network_priority(std::string const& ssid, int priority)
 {
-    auto networks = saved_networks();
-    for (size_t i = 0; i < networks.size(); ++i)
+    if (auto const* net = m_impl->find_saved(ssid))
     {
-        if (networks[i].ssid == ssid)
-        {
-            wpa_cli(
-                m_impl->interface,
-                "set_network " + std::to_string(i) + " priority " +
-                    std::to_string(priority));
-            wpa_cli(m_impl->interface, "save_config");
-            return;
-        }
+        m_impl->run(
+            {"connection",
+             "modify",
+             "uuid",
+             qs(net->uuid),
+             "connection.autoconnect-priority",
+             QString::number(priority)},
+            [impl = m_impl.get()](nmcli::result const&) {
+                impl->refresh_saved_networks();
+            });
     }
 }
 
 void
 wifi_manager::set_network_auto_connect(std::string const& ssid, bool enabled)
 {
-    auto networks = saved_networks();
-    for (size_t i = 0; i < networks.size(); ++i)
+    if (auto const* net = m_impl->find_saved(ssid))
     {
-        if (networks[i].ssid == ssid)
-        {
-            if (enabled)
-            {
-                wpa_cli(m_impl->interface, "enable_network " + std::to_string(i));
-            }
-            else
-            {
-                wpa_cli(m_impl->interface, "disable_network " + std::to_string(i));
-            }
-            wpa_cli(m_impl->interface, "save_config");
-            return;
-        }
+        m_impl->run(
+            {"connection",
+             "modify",
+             "uuid",
+             qs(net->uuid),
+             "connection.autoconnect",
+             enabled ? "yes" : "no"},
+            [impl = m_impl.get()](nmcli::result const&) {
+                impl->refresh_saved_networks();
+            });
     }
 }
 
@@ -891,6 +797,12 @@ void
 wifi_manager::set_connection_changed_callback(connection_changed_callback cb)
 {
     m_impl->on_connection_changed = std::move(cb);
+}
+
+void
+wifi_manager::set_saved_networks_callback(saved_networks_callback cb)
+{
+    m_impl->on_saved_networks = std::move(cb);
 }
 
 void

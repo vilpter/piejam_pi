@@ -50,7 +50,8 @@ struct wifi_saved_network
     bool auto_connect{true};    ///< Automatically connect when in range
     bool hidden{false};         ///< Hidden network (not broadcasting SSID)
     wifi_security security{wifi_security::unknown};
-    // Note: Password is stored in wpa_supplicant.conf, not here
+    std::string uuid;           ///< NetworkManager connection profile
+    // Note: NetworkManager keeps the password in the profile, not here
 };
 
 /// Convert signal strength in dBm to percentage
