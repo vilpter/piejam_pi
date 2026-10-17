@@ -99,6 +99,10 @@ Kept **off** the critical path:
 - **Audio device.** The service doesn't wait for the Scarlett (assumption A7: PieJam
   picks it up when it appears).
 - **`systemd-udev-settle.service`.** A known slow unit that nothing should pull in.
+- **`cloud-init`.** Disabled after provisioning (it ran once for first-boot setup,
+  which now persists); it used to run before `sysinit.target` on every boot (D19).
+- **The boot partition's `fsck`.** Its fstab pass number is 0, so it isn't checked
+  at boot; the root filesystem still is (D19).
 
 Measurement method: [benchmark-plan.md](benchmark-plan.md).
 
