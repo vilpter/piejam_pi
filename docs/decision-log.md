@@ -28,6 +28,7 @@ default chosen to avoid blocking; revisit freely) · **Open** (needs an answer).
 | D16 | 2026-10-15 | `piejam.service` allows real-time priority up to 99 but keeps memory locking limited (8 MB): PieJam's `mlockall(MCL_FUTURE)` crashes Debian's Qt 5 QML engine if it succeeds | Default | [architecture](architecture.md#runtime-user) |
 | D17 | 2026-10-15 | The app's source lives in this repository under `app/` (imported from `vilpter/piejam` `e1291b94`, which is archived); app changes go through pull requests here | Decided | [ADR 0003](adr/0003-fork-reuse-strategy.md#amendment-2026-10-15-the-app-moves-into-this-repository) |
 | D18 | 2026-10-16 | NFS is **server-only**: the Pi shares its recordings; the client (mounting remote shares) was removed. The share is read-write to the Pi's current subnet, applied with `exportfs` on demand and never written to `/etc/exports`, so it never costs boot time; the UI warns before enabling it | Decided | [ADR 0004](adr/0004-network-backend-nmcli.md) |
+| D19 | 2026-10-17 | Disable cloud-init after provisioning (`/etc/cloud/cloud-init.disabled`) and skip the FAT boot partition's `fsck` (fstab pass 0). Both were on piejam's critical chain; first-boot settings already persist, and the boot partition is written only on kernel/firmware updates. Root `fsck` is unchanged. Accepted risk: boot-partition corruption goes unnoticed | Decided | [benchmark plan](benchmark-plan.md#phase-2-optimization-candidates) |
 
 ## Assumptions
 
@@ -77,7 +78,7 @@ Resolved:
 | F7 | Restore memory locking without the Qt crash: lock with `MCL_CURRENT` once startup is done, or lock only the audio engine's buffers; then raise `LimitMEMLOCK` again (D16) | App |
 | F8 | ~~Reduce the Info page's diagnostics to the actionable ones~~ Done in #3: an info threshold on the Info page's sink, and user-facing levels for network messages. The badge after start went from 16 to 0, and from 27 to 5 after a full Network-page run | `app/` |
 | F9 | PieJam drives one sound card. Four inputs need one interface with four or more inputs (Scarlett 4i4/8i6/18i8); two 2i2s can't be combined (separate clocks) without a substantial app change. Owner to decide | — |
-| F10 | Phase 2 candidates seen on hardware: cloud-init sits before `sysinit.target` (about 0.6 s per boot, 3.5 s on the first), and the boot partition's `fsck` adds about 0.6 s | [Benchmark plan](benchmark-plan.md) |
+| F10 | ~~Phase 2 candidates: cloud-init before `sysinit.target`, and the boot partition's `fsck`~~ Done 2026-10-17 (D19, stage 60): both removed from piejam's critical chain. UI visible 6.01 s → 5.49 s, boot finished 7.58 s → 6.90 s | [Benchmark plan](benchmark-plan.md) |
 
 ## Findings: first hardware run
 
