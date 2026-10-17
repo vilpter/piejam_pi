@@ -67,6 +67,8 @@
 #include <boost/core/demangle.hpp>
 #include <boost/polymorphic_cast.hpp>
 
+#include <systemd/sd-daemon.h>
+
 #include <filesystem>
 
 namespace
@@ -290,6 +292,26 @@ main(int argc, char* argv[]) -> int
     {
         qFatal("Could not load Main.qml");
         return 1;
+    }
+
+    // Tell systemd the UI is up once the first frame has actually been
+    // presented (piejam.service is Type=notify). frameSwapped fires on the
+    // render thread; routing it through the window (a main-thread object)
+    // runs the notify on the main thread. The mutable flag fires it once.
+    if (auto* window =
+            qobject_cast<QQuickWindow*>(engine.rootObjects().constFirst()))
+    {
+        QObject::connect(
+            window,
+            &QQuickWindow::frameSwapped,
+            window,
+            [notified = false]() mutable {
+                if (!notified)
+                {
+                    notified = true;
+                    sd_notify(0, "READY=1");
+                }
+            });
     }
 
     QObject::connect(

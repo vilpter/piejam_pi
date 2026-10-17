@@ -38,30 +38,6 @@ journal_secs() {
     journal_stamp "$1" short-monotonic | awk '{ printf "%.2f", $1 }'
 }
 
-# Interim "UI visible" marker: Qt logs its GL setup (QSG_INFO=1) while
-# preparing the first frame. PieJam routes Qt's messages to its own log file,
-# not the journal, with wall-clock timestamps, and flushes it every 5 s.
-# The marker is placed on the monotonic clock relative to the launcher's
-# "using" journal line, which is logged just before the app starts, so a
-# clock change earlier in boot doesn't skew it. Replace with sd_notify from
-# the app later (benchmark plan, "Making M2 exact").
-ui_visible_secs() {
-    local log wall ui_unix anchor_mono anchor_unix i
-    log=$(getent passwd piejam | cut -d: -f6)/piejam.log
-    [[ -r $log ]] || { echo "unreadable" ; return; }
-    for (( i = 0; i < 12; i++ )); do
-        wall=$(sed -nE '/GL_RENDERER/{s/^\[([0-9-]+ [0-9:.]+)\].*/\1/p;q}' "$log")
-        [[ -n $wall ]] && break
-        sleep 1
-    done
-    [[ -n $wall ]] && ui_unix=$(date -d "$wall" +%s.%N 2>/dev/null) || return 0
-    anchor_mono=$(journal_stamp 'piejam-launch: using' short-monotonic)
-    anchor_unix=$(journal_stamp 'piejam-launch: using' short-unix)
-    [[ -n $ui_unix && -n $anchor_mono && -n $anchor_unix ]] || return 0
-    awk -v mono="$anchor_mono" -v unix="$anchor_unix" -v ui="$ui_unix" \
-        'BEGIN { printf "%.2f", mono + (ui - unix) }'
-}
-
 # Wait for boot to finish so systemd has final numbers.
 systemctl is-system-running --wait >/dev/null 2>&1 || true
 
@@ -70,12 +46,10 @@ boot_finished=$(secs "$(prop FinishTimestampMonotonic)")
 piejam_start=$(secs "$(prop piejam.service ExecMainStartTimestampMonotonic)")
 restarts=$(prop piejam.service NRestarts)
 display_found=$(journal_secs 'piejam-launch: using')
-ui_visible=$(ui_visible_secs)
-ui_note="approximate; QSG_INFO marker"
-if [[ $ui_visible == unreadable ]]; then
-    ui_visible=
-    ui_note="PieJam's log is only readable as root; run with sudo"
-fi
+# piejam.service is Type=notify: it goes active exactly when PieJam sends
+# READY=1, which it does once its first frame is on screen (F5).
+ui_visible=$(secs "$(prop piejam.service ActiveEnterTimestampMonotonic)")
+ui_note="sd_notify at first frame"
 audio_ready=$(secs "$(prop piejam-audio-ready.service ActiveEnterTimestampMonotonic)")
 
 chain=$(systemd-analyze critical-chain piejam.service --no-pager 2>&1 || true)

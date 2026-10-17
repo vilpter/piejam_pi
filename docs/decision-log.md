@@ -42,7 +42,7 @@ Working assumptions, checked on the hardware as it becomes possible.
 | A5 | The Scarlett 2i2 needs no quirk flags on the trixie kernel | Not tested yet (no interface connected) |
 | A6 | 8–15 s is reachable without a custom kernel or initramfs | Promising: UI visible 5.3 s after kernel start (firmware time not yet measured) |
 | A7 | PieJam picks up the Scarlett when it's plugged in after the app has started | Not tested yet |
-| A8 | The `QSG_INFO` log line lands within a frame or two of the first visible frame | Not tested yet (needs the external video) |
+| A8 | ~~The `QSG_INFO` log line lands within a frame or two of the first visible frame~~ No longer relied on: M2 now comes from `sd_notify` at the first `frameSwapped()` (F5) | Superseded |
 | A9 | The package names in stage `10-packages` are right for trixie (notably `qtvirtualkeyboard5-dev`, `qtquickcontrols2-5-dev`, `caps`, `tap-plugins`) | **Failed, fixed**: the dev package is `libqt5virtualkeyboard5-dev`; three runtime packages were missing |
 | A10 | udev can set the Scarlett's ALSA card id (`ATTR{id}="Scarlett"`) | Not tested yet |
 | A11 | The KMS panel driver turns the backlight on by itself (PieJam OS's init script set `bl_power` explicitly) | **Holds**: `bl_power=0`, brightness 255 at boot |
@@ -72,7 +72,7 @@ Resolved:
 | F2 | ~~Remove the Buildroot-specific WiFi paths (busybox `udhcpc`, `modprobe brcmfmac`)~~ Done in #2; the NFS init-script paths (`/etc/init.d/S60nfs`) were removed with F4 | `app/` |
 | F3 | ~~Review the Buildroot cross-compile fixes~~ Not applicable to the current fork history | — |
 | F4 | ~~Rework the network backend onto `nmcli`/systemd with `QProcess` argument lists~~ **Done.** WiFi in #2 (2026-10-15); NFS in #4 (2026-10-16): server-only (the client was removed, D18), shared on demand and never at boot, with the export applied by a validated root helper (`piejam-nfs-export`) and the service started through polkit | `app/` + provisioning, [ADR 0004](adr/0004-network-backend-nmcli.md) |
-| F5 | Emit `sd_notify READY=1` after the first frame; switch the unit to `Type=notify` | `app/` + `systemd/`, [benchmark plan](benchmark-plan.md#making-m2-exact) |
+| F5 | ~~Emit `sd_notify READY=1` after the first frame; switch the unit to `Type=notify`~~ Done 2026-10-17: PieJam notifies after its first `frameSwapped()`, the unit is `Type=notify`/`NotifyAccess=all`, and `measure-boot.sh` reads M2 from the service's active-enter time | `app/` + `systemd/`, [benchmark plan](benchmark-plan.md#m2-is-exact-sd_notify) |
 | F6 | ~~Lint the scripts with shellcheck~~ Done: `tests/lint.sh` is clean. Still open: CI running `tests/lint.sh` and the test scripts on every push | This repo |
 | F7 | Restore memory locking without the Qt crash: lock with `MCL_CURRENT` once startup is done, or lock only the audio engine's buffers; then raise `LimitMEMLOCK` again (D16) | App |
 | F8 | ~~Reduce the Info page's diagnostics to the actionable ones~~ Done in #3: an info threshold on the Info page's sink, and user-facing levels for network messages. The badge after start went from 16 to 0, and from 27 to 5 after a full Network-page run | `app/` |
