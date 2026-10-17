@@ -7,7 +7,14 @@ StartLimitIntervalSec=120
 StartLimitBurst=5
 
 [Service]
-Type=simple
+# PieJam signals readiness with sd_notify(READY=1) once its first frame is on
+# screen, so the unit becomes active exactly at "UI visible". The notifying
+# process is PieJam, which piejam-launch runs as a child (not MainPID), so
+# readiness must be accepted from any process in the unit (NotifyAccess=all).
+Type=notify
+NotifyAccess=all
+# Fail and restart rather than hang if the first frame never comes.
+TimeoutStartSec=30
 User=piejam
 Group=piejam
 SupplementaryGroups=audio video render input
@@ -21,8 +28,8 @@ Environment=XDG_RUNTIME_DIR=/run/piejam
 Environment=QT_QPA_PLATFORM=eglfs
 Environment=QT_QPA_EGLFS_INTEGRATION=eglfs_kms
 Environment=QT_QPA_EGLFS_HIDECURSOR=1
-# Logs scene-graph setup, used as the interim "UI visible" marker by
-# benchmarks/measure-boot.sh.
+# Logs scene-graph setup (renderer, GL version) to the app log. Kept for
+# diagnostics; "UI visible" timing now comes from sd_notify, not this.
 Environment=QSG_INFO=1
 
 ExecStart=/usr/local/lib/piejam/piejam-launch

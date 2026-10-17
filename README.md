@@ -10,9 +10,10 @@ but it deliberately does **not** build a custom OS image. It provisions a stock
 keeps normal `apt` package management and stays maintainable.
 See [ADR 0001](docs/adr/0001-pi-os-lite-not-buildroot.md).
 
-> **Status:** provisioned and booted on a Pi 5 (2026-10-15): the mixer is on the panel
-> 5.3 s after kernel start. Audio through the Scarlett isn't validated yet; open items
-> are tracked in the [decision log](docs/decision-log.md).
+> **Status:** provisioned and booted on a Pi 5: the mixer is on the panel ~6.0 s after
+> kernel start (the exact first-frame time, reported via `sd_notify`; see the
+> [benchmark plan](docs/benchmark-plan.md)). Audio through the Scarlett isn't validated
+> yet; open items are tracked in the [decision log](docs/decision-log.md).
 
 ## Target hardware
 

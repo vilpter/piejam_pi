@@ -43,6 +43,7 @@ build_packages=(
     libqt5svg5-dev
     libboost-dev
     libspdlog-dev
+    libsystemd-dev                        # sd_notify(READY=1) at first frame (F5)
     libfftw3-dev
     libsndfile1-dev
     nlohmann-json3-dev

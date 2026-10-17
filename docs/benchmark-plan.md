@@ -10,7 +10,7 @@ first, then optimize**, one measured change at a time.
 |---|---|---|
 | **M0 Power on** | Power applied | External video (see below) |
 | **M1 Kernel start** | Firmware hands over to Linux | `t = 0` of `CLOCK_MONOTONIC` |
-| **M2 UI visible** | First PieJam frame on the panel | Interim: first Qt scene-graph log line (`QSG_INFO=1`). Planned: `sd_notify` from the app |
+| **M2 UI visible** | First PieJam frame on the panel | `sd_notify(READY=1)` after the first `frameSwapped()`; the `Type=notify` unit goes active then |
 | **M3 Audio ready** | Scarlett 2i2's ALSA card exists | Activation of `piejam-audio-ready.service` (started by udev) |
 
 M2 and M3 are **separate** on purpose. They depend on different subsystems
@@ -33,15 +33,15 @@ external measurement:
 Firmware time changes only with EEPROM settings, `config.txt` or hardware, so it
 only needs re-measuring after those change.
 
-### Making M2 exact
+### M2 is exact (sd_notify)
 
-`QSG_INFO` output comes from the scene-graph setup just before the first frame,
-so it slightly under-reports M2. The exact fix belongs in the app fork: after the
-window's first `frameSwapped()`, call `sd_notify(0, "READY=1")` and switch
-`piejam.service` to `Type=notify` with `NotifyAccess=all` (the notification
-comes from the app, not the launcher). Then `systemd-analyze critical-chain`
-reports the UI milestone directly. Tracked as a follow-up in the
-[decision log](decision-log.md).
+PieJam calls `sd_notify(0, "READY=1")` after its window's first `frameSwapped()`,
+and `piejam.service` is `Type=notify` with `NotifyAccess=all` (the notification
+comes from PieJam, which `piejam-launch` runs as a child, not the main process).
+The unit therefore goes active exactly at the first visible frame, so
+`measure-boot.sh` reads M2 from the service's `ActiveEnterTimestampMonotonic` and
+`systemd-analyze critical-chain` reports the UI milestone directly — no log
+scraping, and no need to run the script as root. (Done, F5.)
 
 ## Running a measurement
 

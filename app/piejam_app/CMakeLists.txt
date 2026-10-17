@@ -3,6 +3,11 @@
 # SPDX-License-Identifier: CC0-1.0
 
 add_executable(piejam_app main.cpp)
+
+# libsystemd for sd_notify(READY=1): the app tells systemd the UI is up once
+# the first frame is on screen (piejam.service is Type=notify).
+pkg_check_modules(SYSTEMD REQUIRED IMPORTED_TARGET libsystemd)
+
 target_link_libraries(piejam_app
     PRIVATE
     piejam_compiler_warnings
@@ -13,6 +18,7 @@ target_link_libraries(piejam_app
     piejam_gui
     piejam_network_manager
     piejam_fx_modules
+    PkgConfig::SYSTEMD
     m
 )
 
