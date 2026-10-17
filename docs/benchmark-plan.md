@@ -100,8 +100,8 @@ it helps and doesn't cost reliability or maintainability.
 |---|---|---|
 | Drop services `blame` shows as slow and unneeded (candidates: `bluetooth`/`hciuart` if unused, `triggerhappy`, `keyboard-setup`, `e2scrub_reap`) | Shorter userspace | Low; check each is truly unused |
 | Move `apt-daily`, `apt-daily-upgrade` and `man-db` timers away from boot | No background I/O during the first minutes, which can cause audio dropouts | Low |
-| Disable cloud-init after the first boot (`/etc/cloud/cloud-init.disabled`); it runs before `sysinit.target` on every boot | About 0.6 s (3.5 s on the first boot) | Low; check the netplan WiFi profile survives |
-| Skip or speed up the `fsck` of the FAT boot partition, which `cloud-init` waits for | About 0.6 s | Medium; a damaged boot partition goes unnoticed |
+| ~~Disable cloud-init after the first boot (`/etc/cloud/cloud-init.disabled`); it runs before `sysinit.target` on every boot~~ Done (F10, stage 60). The WiFi profile survives (NetworkManager renders the persisted netplan profile; verified it reconnects) | ~0.5 s off the boot; cloud-init no longer on the critical chain | Low |
+| ~~Skip or speed up the `fsck` of the FAT boot partition, which `cloud-init` waits for~~ Done (F10, stage 60): fstab pass number set to 0; the root filesystem is still checked | part of the ~0.5–0.7 s saved; no longer on the chain | Medium; a damaged boot partition goes unnoticed |
 | Skip the initramfs if one is loaded (root on NVMe ext4 doesn't need it) | Shorter kernel phase | Medium; affects boot recovery |
 | `dtparam=pciex1_gen=3` | Faster NVMe | Medium; Gen 3 isn't officially certified on the Pi 5 |
 | Trim EEPROM boot order to try NVMe only | Shorter firmware phase | Medium; removes SD/USB fallback for recovery |
@@ -112,7 +112,9 @@ it helps and doesn't cost reliability or maintainability.
 
 | Date | Label | Firmware (M0→M1) | UI visible (M2) | Audio ready (M3) | Total to UI | Notes |
 |---|---|---|---|---|---|---|
-| 2026-10-15 | baseline-reboot | not measured | 5.31 s | n/a (no interface) | — | `reboot`, not a cold boot. Kernel 1.89 s, userspace 5.73 s, `piejam.service` started at 4.58 s |
+| 2026-10-15 | baseline-reboot | not measured | 5.31 s | n/a (no interface) | — | `reboot`, not a cold boot. Interim `QSG_INFO` marker (under-reports M2). Kernel 1.89 s, userspace 5.73 s, `piejam.service` started at 4.58 s |
+| 2026-10-17 | f5-sd-notify | not measured | 6.01 s | n/a (no interface) | — | `reboot`. First exact M2 (`sd_notify`); the higher number vs. baseline is the honest first frame, not a regression. `piejam.service` started at 4.50 s, boot finished 7.58 s |
+| 2026-10-17 | f10-boot-trims | not measured | 5.49 s | n/a (no interface) | — | `reboot`. cloud-init disabled + boot-partition `fsck` skipped (F10); both off the critical chain. `piejam.service` started at 3.82 s, boot finished 6.90 s |
 
 ## Automated tests
 
