@@ -124,9 +124,18 @@ The app keeps its data under `/home/piejam`: settings in `~/.config/`, sessions 
 filesystem (decision D12).
 
 Privileges beyond that are narrow:
-- a polkit rule lets `piejam` power off and reboot, and manage NetworkManager
-  (for the network backend rework, [ADR 0004](adr/0004-network-backend-nmcli.md));
-- NFS mount and export will get specific `sudo` rules as part of that rework.
+- a polkit rule lets `piejam` power off and reboot, manage NetworkManager, and
+  start and stop `nfs-server` (for the network backend rework,
+  [ADR 0004](adr/0004-network-backend-nmcli.md));
+- sharing the recordings over NFS is applied by a validated root helper
+  (`piejam-nfs-export`) through one restricted `sudo` rule; the app never runs
+  `exportfs` directly.
+
+The recordings directory can be shared over NFS on demand from the Network page
+(server only; the Pi offers its recordings but doesn't mount remote shares). The
+share is read-write to the Pi's current subnet and lives only in the kernel export
+table, so it is gone after a reboot and never a boot dependency (ADR 0004, ADR 0005).
+Recordings can also be copied off over SSH without turning NFS on.
 
 ## Power and recovery
 

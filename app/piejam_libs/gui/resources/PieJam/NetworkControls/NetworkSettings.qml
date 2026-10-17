@@ -134,8 +134,21 @@ SubscribableItem {
                 id: nfsSwitch
                 checked: root.model ? root.model.nfsServerActive : false
                 enabled: root.model && root.model.wifiConnected
+                         && root.model.nfsServerAvailable
                 onToggled: {
-                    if (root.model) root.model.toggleNfsServer()
+                    if (!root.model) {
+                        return
+                    }
+                    // Warn before sharing; just stop sharing on the way off.
+                    // The switch tracks the server's real state until then.
+                    if (checked) {
+                        nfsWarningDialog.open()
+                    } else {
+                        root.model.disableNfsServer()
+                    }
+                    checked = Qt.binding(function() {
+                        return root.model ? root.model.nfsServerActive : false
+                    })
                 }
             }
 
@@ -310,6 +323,37 @@ SubscribableItem {
         function onNetworkError(message) {
             errorDialog.text = message
             errorDialog.open()
+        }
+
+        function onNfsServerError(message) {
+            errorDialog.text = message
+            errorDialog.open()
+        }
+    }
+
+    // NFS share warning: sharing is read-write to the whole local network.
+    Dialog {
+        id: nfsWarningDialog
+
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        width: 400
+        modal: true
+        title: qsTr("Share recordings?")
+        standardButtons: Dialog.Ok | Dialog.Cancel
+
+        Label {
+            width: parent.width
+            wrapMode: Text.WordWrap
+            text: qsTr("Everyone on the local network will be able to read, "
+                       + "change, and delete your recordings until sharing is "
+                       + "turned off.")
+        }
+
+        onAccepted: {
+            if (root.model) {
+                root.model.enableNfsServer()
+            }
         }
     }
 

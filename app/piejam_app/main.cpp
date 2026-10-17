@@ -16,7 +16,6 @@
 #include <piejam/midi/device_update.h>
 #include <piejam/midi/input_event_handler.h>
 #include <piejam/network_manager/network_controller.h>
-#include <piejam/network_manager/nfs_client.h>
 #include <piejam/network_manager/nfs_server.h>
 #include <piejam/network_manager/wifi_manager.h>
 #include <piejam/range/iota.h>
@@ -211,8 +210,6 @@ main(int argc, char* argv[]) -> int
         std::make_shared<network_manager::network_controller>();
     auto wifi_mgr = std::make_shared<network_manager::wifi_manager>();
     auto nfs_srv = std::make_shared<network_manager::nfs_server>();
-    auto nfs_cli = std::make_shared<network_manager::nfs_client>(
-        locs.config_dir / "nfs_mounts.json");
 
     auto audio_workers = piejam::algorithm::transform_to_vector(
         piejam::range::iota(hw_threads - 1),
@@ -280,8 +277,7 @@ main(int argc, char* argv[]) -> int
         locs.sessions_dir,
         network_ctrl,
         wifi_mgr,
-        nfs_srv,
-        nfs_cli);
+        nfs_srv);
 
     QQmlApplicationEngine engine;
     engine.addImportPath("qrc:/");

@@ -27,8 +27,7 @@ Root::Root(
     std::filesystem::path sessions_dir,
     std::shared_ptr<network_manager::network_controller> netCtrl,
     std::shared_ptr<network_manager::wifi_manager> wifiMgr,
-    std::shared_ptr<network_manager::nfs_server> nfsSrv,
-    std::shared_ptr<network_manager::nfs_client> nfsCli)
+    std::shared_ptr<network_manager::nfs_server> nfsSrv)
     : CompositeSubscribableModel{state_access}
     , m_audioDeviceSettings{&addModel<AudioDeviceSettings>()}
     , m_audioInputSettings{&addModel<AudioInputOutputSettings>(
@@ -43,8 +42,7 @@ Root::Root(
               ? &addModel<NetworkSettings>(
                     std::move(netCtrl),
                     std::move(wifiMgr),
-                    std::move(nfsSrv),
-                    std::move(nfsCli))
+                    std::move(nfsSrv))
               : nullptr}
     , m_mixer{&addModel<Mixer>()}
     , m_info{&addModel<Info>()}

@@ -10,26 +10,11 @@
 
 #include <QObject>
 
-#include <cstdlib>
 #include <memory>
 #include <string>
 
 namespace piejam::network_manager
 {
-
-namespace
-{
-
-/// Unmount all NFS mounts
-void
-unmount_all_nfs()
-{
-    spdlog::debug("Unmounting NFS shares");
-    [[maybe_unused]]
-    auto rc = std::system("umount -a -t nfs,nfs4 2>/dev/null");
-}
-
-} // namespace
 
 struct network_controller::impl
 {
@@ -146,9 +131,6 @@ network_controller::enable()
 bool
 network_controller::disable()
 {
-    // First unmount NFS to prevent hangs
-    unmount_all_nfs();
-
     spdlog::debug("Disabling WiFi");
     m_impl->set_radio(false);
     return true;

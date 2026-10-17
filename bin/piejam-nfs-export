@@ -1,0 +1,77 @@
+#!/bin/bash
+# Export PieJam's recordings directory over NFS, on demand.
+#
+# PieJam runs unprivileged and calls this through a restricted sudoers rule
+# (see config/sudoers/piejam-nfs). The export path is fixed here and never
+# taken from the caller; the only caller-supplied value, the allowed subnet,
+# is validated against a strict IPv4 CIDR pattern before it reaches exportfs.
+#
+# The export lives only in the kernel table, never in /etc/exports, so it is
+# gone after a reboot: the network is never a boot dependency (ADR 0005).
+# PieJam is the only NFS exporter on the appliance, so clearing is a flush of
+# the whole transient export table.
+set -euo pipefail
+
+# The recordings live here; they are shared under a short path so the mount
+# command clients type stays short (e.g. 192.168.30.234:/srv/rec). The short
+# path is a bind mount of the recordings, set up only while sharing is on.
+real_path=/home/piejam/recordings
+export_path=/srv/rec
+
+usage() {
+    echo "usage: $(basename "$0") export <ipv4-cidr> <rw|ro> | unexport" >&2
+    exit 2
+}
+
+# Strict a.b.c.d/pp: four octets in 0-255 and a prefix in 0-32. This string is
+# handed to exportfs as the host specification, so nothing else is accepted.
+valid_cidr() {
+    local cidr=$1 addr pre a b c d octet
+    [[ $cidr == */* ]] || return 1
+    addr=${cidr%/*}
+    pre=${cidr#*/}
+    [[ $pre =~ ^[0-9]{1,2}$ ]] && ((10#$pre <= 32)) || return 1
+    [[ $addr =~ ^([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})$ ]] || return 1
+    IFS=. read -r a b c d <<<"$addr"
+    for octet in "$a" "$b" "$c" "$d"; do
+        ((10#$octet <= 255)) || return 1
+    done
+    return 0
+}
+
+case ${1:-} in
+export)
+    [[ $# -eq 3 ]] || usage
+    cidr=$2
+    mode=$3
+    valid_cidr "$cidr" || { echo "invalid subnet: $cidr" >&2; exit 1; }
+    [[ $mode == rw || $mode == ro ]] || { echo "invalid mode: $mode" >&2; exit 1; }
+    [[ -d $real_path ]] || { echo "recordings missing: $real_path" >&2; exit 1; }
+    # Map every remote user to the recordings' owner, so anyone on the subnet
+    # can actually read and write them (the access the UI warns about). This
+    # grants access only as that owner, never remote root on the system, which
+    # no_root_squash would.
+    owner_uid=$(stat -c %u "$real_path")
+    owner_gid=$(stat -c %g "$real_path")
+    # Expose the recordings under the short path.
+    mkdir -p "$export_path"
+    mountpoint -q "$export_path" || mount --bind "$real_path" "$export_path"
+    # Clear any stale PieJam export, then add the current one. A bind mount
+    # needs an explicit fsid to be exportable.
+    exportfs -ua
+    exportfs -o "${mode},sync,no_subtree_check,all_squash,anonuid=${owner_uid},anongid=${owner_gid},fsid=1" \
+        "${cidr}:${export_path}"
+    ;;
+unexport)
+    [[ $# -eq 1 ]] || usage
+    exportfs -ua
+    # Drop the bind mount. nfs-server should already be stopped (the app stops
+    # it first); fall back to a lazy unmount if anything still holds it.
+    if mountpoint -q "$export_path"; then
+        umount "$export_path" || umount -l "$export_path" || true
+    fi
+    ;;
+*)
+    usage
+    ;;
+esac

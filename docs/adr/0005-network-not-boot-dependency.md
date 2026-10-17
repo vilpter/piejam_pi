@@ -21,7 +21,8 @@ add tens of seconds to boot or hang it.
 ## Consequences
 
 - **Good:** boot time is independent of the network.
-- **Cost:** anything that genuinely needs the network (NFS auto-mounts, time sync)
-  must tolerate it arriving late. NFS mounts from the app are made on demand, not at boot.
+- **Cost:** anything that genuinely needs the network (time sync, sharing recordings)
+  must tolerate it arriving late. The app's NFS share is turned on from the UI on
+  demand, never at boot, and the `nfs-server` service is disabled at boot.
 - **Check:** `systemd-analyze critical-chain piejam.service` must show no network units
   ([benchmark plan](../benchmark-plan.md)).

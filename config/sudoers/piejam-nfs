@@ -1,0 +1,5 @@
+# Let the PieJam appliance user share its recordings over NFS on demand.
+# The helper fixes the export path and validates the subnet, so allowing it
+# with any arguments is safe; see /usr/local/sbin/piejam-nfs-export and
+# ADR 0004. Starting and stopping the server itself goes through polkit.
+piejam ALL=(root) NOPASSWD: /usr/local/sbin/piejam-nfs-export

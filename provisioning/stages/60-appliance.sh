@@ -22,5 +22,12 @@ if unit_exists NetworkManager-wait-online.service; then
 fi
 systemctl enable --quiet ssh.service
 
+# The NFS server is shared on demand from the UI, never at boot (ADR 0005).
+# Installing nfs-kernel-server enables and starts it, so turn it off and stop
+# it; the app starts it when the user shares recordings.
+if unit_exists nfs-server.service; then
+    systemctl disable --now --quiet nfs-server.service
+fi
+
 systemctl enable --quiet piejam.service
 log "piejam.service enabled"

@@ -78,8 +78,7 @@ public:
         std::filesystem::path sessions_dir,
         std::shared_ptr<network_manager::network_controller> = nullptr,
         std::shared_ptr<network_manager::wifi_manager> = nullptr,
-        std::shared_ptr<network_manager::nfs_server> = nullptr,
-        std::shared_ptr<network_manager::nfs_client> = nullptr);
+        std::shared_ptr<network_manager::nfs_server> = nullptr);
 
     Q_INVOKABLE void showMixer();
     Q_INVOKABLE void showFxModule();

@@ -254,6 +254,5 @@ extern selector<box<std::filesystem::path>> const select_current_session;
 extern selector<bool> const select_session_modified;
 
 extern selector<bool> const select_wifi_enabled;
-extern selector<bool> const select_nfs_server_enabled;
 
 } // namespace piejam::runtime::selectors

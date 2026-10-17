@@ -49,11 +49,6 @@ SPDX-License-Identifier: CC0-1.0
         <file>PieJam/NetworkControls/NetworkSettings.qml</file>
         <file>PieJam/NetworkControls/WiFiConnectionDialog.qml</file>
         <file>PieJam/NetworkControls/WiFiNetworkDelegate.qml</file>
-        <file>PieJam/NetworkControls/NFSSettings.qml</file>
-        <file>PieJam/NetworkControls/NFSServerSettings.qml</file>
-        <file>PieJam/NetworkControls/NFSClientSettings.qml</file>
-        <file>PieJam/NetworkControls/NFSMountDelegate.qml</file>
-        <file>PieJam/NetworkControls/NFSMountDialog.qml</file>
         <file>PieJam/MixerControls/AudioRoutingComboBox.qml</file>
         <file>PieJam/MixerControls/AuxSend.qml</file>
         <file>PieJam/MixerControls/ChannelAddStrip.qml</file>

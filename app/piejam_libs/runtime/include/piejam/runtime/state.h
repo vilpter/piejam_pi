@@ -96,7 +96,6 @@ struct state
 
     // Network state
     bool wifi_enabled{false};
-    bool nfs_server_enabled{false};
 };
 
 auto make_initial_state() -> state;
