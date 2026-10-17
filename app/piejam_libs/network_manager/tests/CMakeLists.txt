@@ -8,9 +8,8 @@ if(PIEJAM_TESTS)
         nmcli_test.cpp
         nmcli_process_test.cpp
         wifi_manager_test.cpp
-        nfs_mount_test.cpp
+        nfs_export_test.cpp
         nfs_server_test.cpp
-        nfs_client_test.cpp
     )
 
     target_link_libraries(piejam_network_manager_test

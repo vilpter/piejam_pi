@@ -1,6 +1,8 @@
 // Allow the PieJam appliance user to act without an interactive session:
 // - power off and reboot (the app's Shutdown button; see piejam-launch)
 // - manage NetworkManager (for the fork's network settings, ADR 0004)
+// - start and stop the NFS server, limited to nfs-server.service, so the
+//   app can share recordings on demand (ADR 0004). Never enabled at boot.
 polkit.addRule(function(action, subject) {
     if (subject.user !== "piejam") {
         return polkit.Result.NOT_HANDLED;
@@ -15,6 +17,11 @@ polkit.addRule(function(action, subject) {
     }
 
     if (action.id.indexOf("org.freedesktop.NetworkManager.") === 0) {
+        return polkit.Result.YES;
+    }
+
+    if (action.id === "org.freedesktop.systemd1.manage-units" &&
+        action.lookup("unit") === "nfs-server.service") {
         return polkit.Result.YES;
     }
 

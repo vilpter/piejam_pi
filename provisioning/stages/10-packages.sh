@@ -26,6 +26,7 @@ runtime_packages=(
     caps
     tap-plugins
     polkitd
+    nfs-kernel-server                     # share recordings on demand (ADR 0004)
 )
 
 # Build: PieJam is built from source on the Pi (ADR 0003). It needs C++26,
